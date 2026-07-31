@@ -1,0 +1,42 @@
+{
+  "name": "asaphjs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "DOTENV_CONFIG_PATH=.env.local tsx -r dotenv/config scripts/seed/run.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-table": "^8.21.3",
+    "better-auth": "^1.6.25",
+    "drizzle-orm": "^0.45.2",
+    "nanoid": "^6.0.0",
+    "next": "16.2.12",
+    "papaparse": "^5.5.4",
+    "pg": "^8.22.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/papaparse": "^5.5.2",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.12",
+    "tsx": "^4.23.1",
+    "typescript": "^5"
+  }
+}
