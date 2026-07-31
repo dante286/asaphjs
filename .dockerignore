@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+
+# env files — pass secrets via --build-arg / compose env, not the build context
+.env*
+
+# local-only data
+public/uploads/*
+!public/uploads/.gitkeep
+
+README.md
+Dockerfile
+.dockerignore
+docker-compose.yml

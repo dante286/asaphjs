@@ -16,38 +16,61 @@ sharing) if you want the full rationale.
 - The "Industry" design system (blueprint/hairline-corner motif) is vendored verbatim in
   `src/app/design-system.css`.
 
-## Setup
+## Setup (first-time run)
 
-1. **Database.** Any Postgres 14+ works. Local Docker example:
+Requires Node 20.9+ and Docker.
 
-   ```bash
-   docker run -d --name archive-pg \
-     -e POSTGRES_PASSWORD=mysecretpassword -e POSTGRES_DB=archive \
-     -p 5432:5432 -v archive_pgdata:/var/lib/postgresql postgres:16
-   ```
-
-2. **Env vars.** Copy `.env.example` to `.env.local` and fill in `DATABASE_URL` and a random
-   `BETTER_AUTH_SECRET`.
-
-3. **Install + migrate:**
+1. **Install:**
 
    ```bash
    npm install
-   npm run db:migrate
    ```
 
-4. **Seed.** Always seeds the 13 built-in templates; `--demo` also creates a demo account
-   with three populated collections:
+2. **Env vars.** Copy `.env.example` to `.env.local` and generate a `BETTER_AUTH_SECRET`
+   (`openssl rand -base64 32`). Defaults for `DATABASE_URL` already match step 3 below, so
+   nothing else needs to change for local dev.
+
+3. **Database.** Any Postgres 14+ works; Postgres 18 is the tested/recommended version.
+   Easiest is the `db` service already defined in `docker-compose.yml`:
 
    ```bash
+   docker compose up -d db
+   ```
+
+   (Standalone `docker run` also works — see the `db` service definition for the
+   equivalent flags. Postgres 18+ images expect their volume mounted at
+   `/var/lib/postgresql`, not the older `/var/lib/postgresql/data`.)
+
+4. **Migrate + seed.** Applies the schema, then seeds the 13 built-in templates plus
+   (with `--demo`) a demo account with three populated collections:
+
+   ```bash
+   npm run db:migrate
    npm run db:seed -- --demo
    # Demo login: demo@example.com / demopassword123
    ```
+
+   > **Windows/PowerShell:** `npm run db:seed` fails with `'DOTENV_CONFIG_PATH' is not
+   > recognized` — the script's inline `VAR=value cmd` syntax is bash-only, and `npm run`
+   > shells out to `cmd.exe` on Windows. Run it directly instead:
+   >
+   > ```powershell
+   > $env:DOTENV_CONFIG_PATH = ".env.local"
+   > npx tsx -r dotenv/config scripts/seed/run.ts --demo
+   > ```
 
 5. **Run:**
 
    ```bash
    npm run dev
+   ```
+
+   Or fully containerized instead of steps 1/5 — build and run the app itself in Docker
+   too (still needs steps 2–4 for the database; copy `BETTER_AUTH_SECRET` from
+   `.env.local` into a top-level `.env` file first, since Compose reads that separately):
+
+   ```bash
+   docker compose up -d --build app
    ```
 
 ## Scripts

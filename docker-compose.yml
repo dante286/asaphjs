@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:mysecretpassword@db:5432/archive
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:3000
+    volumes:
+      - uploads:/app/public/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: archive
+    ports:
+      - "5432:5432"
+    # Postgres 18+ images expect a mount at /var/lib/postgresql (not .../data) —
+    # the entrypoint places versioned data in a subdirectory itself.
+    volumes:
+      - pgdata_pg18:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata_pg18:
+  uploads:
