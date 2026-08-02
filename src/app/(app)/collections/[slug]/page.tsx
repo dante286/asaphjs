@@ -4,6 +4,7 @@ import { getCollectionForUser } from "@/db/queries/collections";
 import { resolveRole } from "@/db/queries/members";
 import { getCollectionStats, getBreakdown, pickBreakdownField } from "@/db/queries/stats";
 import { listItems } from "@/db/queries/items";
+import { getViewPreferences } from "@/db/queries/view-preferences";
 import { CollectionHeader } from "@/components/collection/CollectionHeader";
 import { StatTiles } from "@/components/collection/StatTiles";
 import { BreakdownPanel } from "@/components/collection/BreakdownPanel";
@@ -22,9 +23,10 @@ export default async function CollectionDetailPage({
   const role = await resolveRole(collection.id, session.user.id);
   if (!role) notFound();
 
-  const [stats, initialItems] = await Promise.all([
+  const [stats, initialItems, initialViewPrefs] = await Promise.all([
     getCollectionStats(collection.id, collection.fields),
     listItems({ collectionId: collection.id }),
+    getViewPreferences(session.user.id, collection.id),
   ]);
 
   const breakdownField = pickBreakdownField(collection.fields);
@@ -49,10 +51,12 @@ export default async function CollectionDetailPage({
       )}
       <ItemsExplorer
         collectionId={collection.id}
+        collectionSlug={collection.slug}
         fields={collection.fields}
         canEdit={role === "owner" || role === "editor"}
         defaultView={(collection.defaultView as "covers" | "table") ?? "covers"}
         initialData={initialItemsSerialized}
+        initialViewPrefs={initialViewPrefs}
       />
     </div>
   );

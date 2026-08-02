@@ -143,3 +143,36 @@ export async function deleteItem(itemId: string) {
 export async function getItem(itemId: string) {
   return db.query.items.findFirst({ where: eq(items.id, itemId) });
 }
+
+export type ItemNeighbors = { position: number; total: number; prevId: string | null; nextId: string | null };
+
+/** Previous/next walk the collection's full title order, not the caller's current filter/search. */
+export async function getItemNeighbors(collectionId: string, itemId: string): Promise<ItemNeighbors | null> {
+  const result = await db.execute<{
+    rn: number;
+    total: number;
+    prev_id: string | null;
+    next_id: string | null;
+  }>(sql`
+    with ordered as (
+      select id,
+             row_number() over (order by sort_title) as rn,
+             count(*) over () as total,
+             lag(id) over (order by sort_title) as prev_id,
+             lead(id) over (order by sort_title) as next_id
+      from ${items}
+      where collection_id = ${collectionId}
+    )
+    select rn, total, prev_id, next_id from ordered where id = ${itemId}
+  `);
+
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return {
+    position: Number(row.rn),
+    total: Number(row.total),
+    prevId: row.prev_id,
+    nextId: row.next_id,
+  };
+}
