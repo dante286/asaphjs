@@ -18,6 +18,13 @@ const FIXED_FIELD_TO_COLUMN: Record<string, "verified" | "borrower" | "notes"> =
   comments: "notes",
 };
 
+// verified/borrower get their own dedicated controls and notes its own
+// textarea (see ItemDetail) — this tells the generic details grid to skip
+// them rather than show the same value twice.
+export function isFixedColumnField(fieldId: string): boolean {
+  return fieldId in FIXED_FIELD_TO_COLUMN;
+}
+
 export type ItemLike = {
   title: string;
   verified: boolean;

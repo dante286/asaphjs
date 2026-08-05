@@ -41,8 +41,14 @@ export default async function PublicSharePage({ params }: { params: Promise<{ to
             items={publicItems}
             fields={publicFields}
             canEdit={false}
+            columnWidths={{}}
+            hiddenColumns={[]}
             onFieldChange={() => {}}
             onDelete={() => {}}
+            onOpenItem={() => {}}
+            onResizeColumn={() => {}}
+            onResizeColumnEnd={() => {}}
+            onAutoFitColumn={() => {}}
             rowCountLabel={`${rows.length} items`}
           />
         ) : (

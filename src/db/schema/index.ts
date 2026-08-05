@@ -6,6 +6,7 @@ import { items } from "./items";
 import { collectionMembers } from "./collection-members";
 import { lookupLists, lookupValues } from "./lookup-lists";
 import { importBatches } from "./import-batches";
+import { viewPreferences } from "./view-preferences";
 
 export * from "./auth";
 export * from "./templates";
@@ -15,6 +16,7 @@ export * from "./collection-members";
 export * from "./lookup-lists";
 export * from "./metadata-cache";
 export * from "./import-batches";
+export * from "./view-preferences";
 
 export const templatesRelations = relations(templates, ({ one }) => ({
   owner: one(user, { fields: [templates.ownerId], references: [user.id] }),
@@ -62,4 +64,12 @@ export const importBatchesRelations = relations(importBatches, ({ one, many }) =
     references: [collections.id],
   }),
   items: many(items),
+}));
+
+export const viewPreferencesRelations = relations(viewPreferences, ({ one }) => ({
+  collection: one(collections, {
+    fields: [viewPreferences.collectionId],
+    references: [collections.id],
+  }),
+  user: one(user, { fields: [viewPreferences.userId], references: [user.id] }),
 }));

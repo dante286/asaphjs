@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SaveStatusIndicator, type SaveStatus } from "@/components/collection/SaveStatusIndicator";
 import { CoversView } from "@/components/collection/CoversView";
 import { TableView } from "@/components/collection/TableView";
+import { ColumnMenu } from "@/components/collection/ColumnMenu";
 import {
   ConflictError,
   createItemRequest,
@@ -16,6 +18,7 @@ import {
   type Item,
   type ItemsPage,
 } from "@/lib/api/items-client";
+import { fetchViewPrefs, saveViewPrefs, type ViewPrefs } from "@/lib/api/view-prefs-client";
 import { buildPatchForField } from "@/lib/fields/item-values";
 import type { FieldDef } from "@/lib/fields/field-def";
 
@@ -24,24 +27,102 @@ const DEBOUNCE_MS = 400;
 
 export function ItemsExplorer({
   collectionId,
+  collectionSlug,
   fields,
   canEdit,
   defaultView,
   initialData,
+  initialViewPrefs,
 }: {
   collectionId: string;
+  collectionSlug: string;
   fields: FieldDef[];
   canEdit: boolean;
   defaultView: "covers" | "table";
   initialData: ItemsPage;
+  initialViewPrefs: ViewPrefs;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [view, setView] = useState<"covers" | "table">(defaultView);
   const [q, setQ] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [lentOnly, setLentOnly] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "idle" });
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(initialViewPrefs.columnWidths);
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>(initialViewPrefs.hiddenColumns);
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const viewPrefsQueryKey = ["view-prefs", collectionId] as const;
+  useQuery({
+    queryKey: viewPrefsQueryKey,
+    queryFn: () => fetchViewPrefs(collectionId),
+    initialData: initialViewPrefs,
+    staleTime: Infinity,
+  });
+
+  const viewPrefsMutation = useMutation({
+    mutationFn: (patch: Parameters<typeof saveViewPrefs>[1]) => saveViewPrefs(collectionId, patch),
+  });
+
+  function openItem(item: Item) {
+    router.push(`/collections/${collectionSlug}/items/${item.id}`);
+  }
+
+  function handleResizeColumn(fieldId: string, width: number) {
+    setColumnWidths((prev) => ({ ...prev, [fieldId]: width }));
+  }
+
+  function handleResizeColumnEnd(fieldId: string, width: number) {
+    setSaveStatus({ kind: "saving" });
+    viewPrefsMutation.mutate(
+      { columnWidths: { [fieldId]: width } },
+      { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
+    );
+  }
+
+  function handleAutoFitColumn(fieldId: string) {
+    setColumnWidths((prev) => {
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+    setSaveStatus({ kind: "saving" });
+    viewPrefsMutation.mutate(
+      { columnWidths: { [fieldId]: null } },
+      { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
+    );
+  }
+
+  function handleToggleColumn(fieldId: string) {
+    setHiddenColumns((prev) => {
+      const next = prev.includes(fieldId) ? prev.filter((id) => id !== fieldId) : prev.concat(fieldId);
+      viewPrefsMutation.mutate(
+        { hiddenColumns: next },
+        { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
+      );
+      return next;
+    });
+    setSaveStatus({ kind: "saving" });
+  }
+
+  function handleShowAllColumns() {
+    setHiddenColumns([]);
+    setSaveStatus({ kind: "saving" });
+    viewPrefsMutation.mutate(
+      { hiddenColumns: [] },
+      { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
+    );
+  }
+
+  function handleResetWidths() {
+    setColumnWidths({});
+    setSaveStatus({ kind: "saving" });
+    viewPrefsMutation.mutate(
+      { resetColumnWidths: true },
+      { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
+    );
+  }
 
   const queryKey = ["items", collectionId, { q, verifiedOnly, lentOnly }] as const;
 
@@ -200,18 +281,35 @@ export function ItemsExplorer({
             </button>
           )}
         </div>
-        <SaveStatusIndicator status={saveStatus} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11.5 }}>
+          {view === "table" && (
+            <ColumnMenu
+              fields={fields}
+              hiddenColumns={hiddenColumns}
+              onToggle={handleToggleColumn}
+              onShowAll={handleShowAllColumns}
+              onResetWidths={handleResetWidths}
+            />
+          )}
+          <SaveStatusIndicator status={saveStatus} />
+        </div>
       </div>
 
       {view === "covers" ? (
-        <CoversView items={items} fields={fields} onOpenItem={() => setView("table")} />
+        <CoversView items={items} fields={fields} onOpenItem={openItem} />
       ) : (
         <TableView
           items={items}
           fields={fields}
           canEdit={canEdit}
+          columnWidths={columnWidths}
+          hiddenColumns={hiddenColumns}
           onFieldChange={handleFieldChange}
           onDelete={(item) => deleteMutation.mutate(item)}
+          onOpenItem={openItem}
+          onResizeColumn={handleResizeColumn}
+          onResizeColumnEnd={handleResizeColumnEnd}
+          onAutoFitColumn={handleAutoFitColumn}
           rowCountLabel={rowCountLabel}
         />
       )}
