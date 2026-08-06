@@ -44,7 +44,7 @@ export default async function AuthPage({
             Collection management · v2
           </div>
           <h1 style={{ fontSize: "clamp(40px,6vw,64px)", margin: "8px 0 14px", letterSpacing: "-0.02em" }}>
-            ARCHIVE
+            ASAPH
           </h1>
           <p
             style={{

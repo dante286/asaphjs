@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Archive — collection management",
+  title: "Asaph — collection management",
   description: "Every collection you keep, on one schema.",
 };
 
