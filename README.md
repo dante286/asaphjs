@@ -1,4 +1,4 @@
-# Archive
+# Asaph
 
 A collection tracker (games, books, manga, movies, vinyl, bricks — anything) built on one
 generic schema instead of a table per hobby. Replaces a 13-table Oracle APEX app; see
@@ -18,7 +18,8 @@ sharing) if you want the full rationale.
 
 ## Setup (first-time run)
 
-Requires Node 20.9+ and Docker.
+Requires Node 20.9+ (the floor Next.js 16 enforces) and Docker. The container image builds
+on `node:24-alpine`, so 24 is the version to match if you want local dev and Docker aligned.
 
 1. **Install:**
 
@@ -41,33 +42,43 @@ Requires Node 20.9+ and Docker.
    equivalent flags. Postgres 18+ images expect their volume mounted at
    `/var/lib/postgresql`, not the older `/var/lib/postgresql/data`.)
 
-4. **Migrate + seed.** Applies the schema, then seeds the 13 built-in templates plus
-   (with `--demo`) a demo account with three populated collections:
+4. **Migrate + seed.** `db:migrate` creates the schema; `db:seed` inserts the 14 built-in
+   templates (13 collection types plus "Blank"):
 
    ```bash
    npm run db:migrate
-   npm run db:seed -- --demo
-   # Demo login: demo@example.com / demopassword123
+   npm run db:seed
    ```
 
-   > **Windows/PowerShell:** `npm run db:seed` fails with `'DOTENV_CONFIG_PATH' is not
-   > recognized` — the script's inline `VAR=value cmd` syntax is bash-only, and `npm run`
-   > shells out to `cmd.exe` on Windows. Run it directly instead:
-   >
-   > ```powershell
-   > $env:DOTENV_CONFIG_PATH = ".env.local"
-   > npx tsx -r dotenv/config scripts/seed/run.ts --demo
-   > ```
+   Both read `DATABASE_URL` from `.env.local` — not `.env`, which Compose reads separately.
+   A `DATABASE_URL` already set in your shell takes precedence over the file. If the
+   database it points at doesn't exist, these fail with `database "<name>" does not exist`
+   and leave you with no tables — check the database name in the URL first.
 
-5. **Run:**
+   Both commands work from any shell (bash, PowerShell, cmd) and are safe to rerun —
+   templates upsert by key rather than duplicating.
+
+5. **Demo data (optional).** Creates a demo account with three populated collections —
+   Video Games (10 items), Books (9), and Manga (6):
+
+   ```bash
+   npm run db:seed -- --demo
+   ```
+
+   Login with `demo@example.com` / `demopassword123`. This also runs the template seed from
+   step 4, so it's fine as your only seed command. Rerunning is safe: it skips the demo user
+   and any collection it already created, so edits you make to the demo data survive.
+
+6. **Run:**
 
    ```bash
    npm run dev
    ```
 
-   Or fully containerized instead of steps 1/5 — build and run the app itself in Docker
-   too (still needs steps 2–4 for the database; copy `BETTER_AUTH_SECRET` from
-   `.env.local` into a top-level `.env` file first, since Compose reads that separately):
+   Or fully containerized instead of steps 1/6 — build and run the app itself in Docker
+   too (still needs steps 2–4 for the database, plus 5 if you want demo data; copy
+   `BETTER_AUTH_SECRET` from `.env.local` into a top-level `.env` file first, since Compose
+   reads that separately):
 
    ```bash
    docker compose up -d --build app
@@ -83,7 +94,8 @@ Requires Node 20.9+ and Docker.
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema directly (no migration file — dev convenience) |
 | `npm run db:studio` | Drizzle Studio (browse the DB) |
-| `npm run db:seed -- [--demo]` | Seed templates, optionally demo data |
+| `npm run db:seed` | Seed the 14 built-in templates (idempotent) |
+| `npm run db:seed -- --demo` | Same, plus the demo account and its three collections |
 
 ## What's implemented
 

@@ -21,7 +21,7 @@ export function TopNav({ userName }: { userName: string }) {
         className="nav-brand"
         style={{ letterSpacing: "0.04em", marginRight: "clamp(8px,3vw,32px)" }}
       >
-        ARCHIVE
+        ASAPH
       </Link>
       <Link href="/" style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}>
         Collections

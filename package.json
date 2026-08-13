@@ -11,7 +11,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:seed": "DOTENV_CONFIG_PATH=.env.local tsx -r dotenv/config scripts/seed/run.ts"
+    "db:seed": "tsx scripts/seed/run.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

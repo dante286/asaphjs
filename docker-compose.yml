@@ -7,7 +7,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: postgresql://postgres:mysecretpassword@db:5432/archive
+      DATABASE_URL: postgresql://postgres:mysecretpassword@db:5432/asaph
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:3000
     volumes:
@@ -21,7 +21,7 @@ services:
     image: postgres:18-alpine
     environment:
       POSTGRES_PASSWORD: mysecretpassword
-      POSTGRES_DB: archive
+      POSTGRES_DB: asaph
     ports:
       - "5432:5432"
     # Postgres 18+ images expect a mount at /var/lib/postgresql (not .../data) —

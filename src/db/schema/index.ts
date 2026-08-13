@@ -15,6 +15,7 @@ export * from "./items";
 export * from "./collection-members";
 export * from "./lookup-lists";
 export * from "./metadata-cache";
+export * from "./metadata-search-cache";
 export * from "./import-batches";
 export * from "./view-preferences";
 

@@ -26,7 +26,7 @@ export default async function PublicSharePage({ params }: { params: Promise<{ to
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", color: "var(--color-text)" }}>
       <div className="nav" style={{ borderBottom: "1px solid var(--color-divider)", padding: "12px clamp(14px,3vw,32px)" }}>
-        <span className="nav-brand">ARCHIVE</span>
+        <span className="nav-brand">ASAPH</span>
         <Tag variant="outline">Public read-only view</Tag>
       </div>
       <div style={{ maxWidth: 1400, margin: "0 auto", padding: "clamp(18px,3vw,36px) clamp(14px,3vw,32px) 80px" }}>
