@@ -18,7 +18,8 @@ sharing) if you want the full rationale.
 
 ## Setup (first-time run)
 
-Requires Node 20.9+ and Docker.
+Requires Node 20.9+ (the floor Next.js 16 enforces) and Docker. The container image builds
+on `node:24-alpine`, so 24 is the version to match if you want local dev and Docker aligned.
 
 1. **Install:**
 
