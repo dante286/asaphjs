@@ -103,11 +103,36 @@ Auth (email/password), collections with template/blank/CSV creation, custom fiel
 per-field autosave (covers + table views, optimistic with conflict detection), CSV import
 into new or existing collections (type-guessing, mapping, batch rollback), sharing
 (per-collection invites with viewer/editor roles, public read-only links), account settings
-(profile, password, sessions, CSV/JSON export).
+(profile, password, sessions, CSV/JSON export), and photo upload for item covers.
 
 **Not implemented:** real metadata/cover lookups (IGDB/OpenLibrary/TMDB/etc.) — stubbed
 behind `src/lib/metadata/provider.ts`'s interface only, since those need third-party API
-keys. Cover images are user-supplied URLs or local `public/uploads/` — no S3/R2 wiring.
+keys.
+
+## Item photos
+
+Covers come from a metadata provider when one has art, and otherwise from a photo the
+owner uploads on the item detail page (JPEG/PNG/WebP/GIF/AVIF, 10MB cap). Files land in
+`UPLOADS_DIR` (default `./uploads`, a Docker volume in Compose) — no S3/R2 wiring.
+
+Nothing is stored as sent. `src/lib/uploads/store.ts` re-encodes every upload through
+sharp: EXIF orientation applied, then bounded to 1600px on the longest edge and written
+as WebP. That caps what a 4000px phone photo costs to serve, drops the EXIF block (a
+camera roll photo carries GPS coordinates), and means the bytes on disk are libvips
+output rather than a stranger's file. Animated GIFs keep their first frame only.
+
+Three things worth knowing about that path:
+
+- Uploads are **not** under `public/`. Next indexes the public folder once at server
+  start in production, so anything written afterwards 404s until a restart. They're
+  served by `src/app/api/uploads/[name]/route.ts` instead, which reads per request.
+- That read route is **unauthenticated by design** — public share pages (`/s/:token`)
+  render covers with plain `<img>` and carry no session. The random filename is the
+  capability, so anyone holding the URL can fetch the photo. Fine for shelf pictures;
+  swap in signed URLs before storing anything sensitive.
+- sharp ships prebuilt platform binaries, so the Docker image needs the `linuxmusl`
+  ones from `package-lock.json` — regenerate the lockfile with `npm install`, never by
+  hand-editing, or `npm ci` inside `node:24-alpine` won't find them.
 
 ## MySQL path (not built, but the seam is here)
 

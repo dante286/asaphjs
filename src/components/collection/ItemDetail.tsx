@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { Tag } from "@/components/ui/Tag";
 import { FieldCell } from "@/components/collection/FieldCell";
+import { CoverPhoto } from "@/components/collection/CoverPhoto";
 import { SaveStatusIndicator, type SaveStatus } from "@/components/collection/SaveStatusIndicator";
 import { ConflictError, deleteItemRequest, patchItemRequest, type Item } from "@/lib/api/items-client";
 import { isTitleField, isFixedColumnField, getFieldValue, buildPatchForField } from "@/lib/fields/item-values";
@@ -135,26 +136,14 @@ export function ItemDetail({
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,270px),1fr))", gap: "clamp(20px,3vw,40px)", alignItems: "start" }}>
         <div style={{ maxWidth: 330, display: "grid", gap: 12 }}>
-          <Blueprint
-            className="duotone"
-            style={{
-              aspectRatio: "3/4",
-              background: item.coverUrl ? undefined : PLATES[neighbors.position % PLATES.length],
-              display: "grid",
-              placeItems: item.coverUrl ? "stretch" : "end start",
-              padding: item.coverUrl ? 0 : 14,
-              overflow: "hidden",
-            }}
-          >
-            {item.coverUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.coverUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            ) : (
-              <span style={{ fontFamily: "var(--font-heading)", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "color-mix(in srgb, var(--color-text) 45%, transparent)" }}>
-                Cover
-              </span>
-            )}
-          </Blueprint>
+          <CoverPhoto
+            collectionId={collection.id}
+            item={item}
+            canEdit={canEdit}
+            plate={PLATES[neighbors.position % PLATES.length]}
+            onItemUpdate={setItem}
+            onStatusChange={setSaveStatus}
+          />
 
           <Blueprint style={{ padding: "12px 14px", display: "grid", gap: 10, fontSize: 12.5 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: canEdit ? "pointer" : "default" }}>

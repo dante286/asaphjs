@@ -10,8 +10,9 @@ services:
       DATABASE_URL: postgresql://postgres:mysecretpassword@db:5432/asaph
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:3000
+      UPLOADS_DIR: /app/uploads
     volumes:
-      - uploads:/app/public/uploads
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy

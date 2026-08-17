@@ -42,7 +42,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-RUN mkdir -p ./public/uploads && chown nextjs:nodejs ./public/uploads
+# Item photos live outside ./public on purpose — Next indexes the public folder
+# once at boot in production, so files written after that would 404 until a
+# restart. They're served by the /api/uploads route instead.
+ENV UPLOADS_DIR=/app/uploads
+RUN mkdir -p ./uploads && chown nextjs:nodejs ./uploads
 
 USER nextjs
 
