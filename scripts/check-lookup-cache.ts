@@ -51,6 +51,16 @@ function checkCalls(label: string, expected: number) {
   check(label, actual === expected, `${actual} provider request(s), expected ${expected}`);
 }
 
+/**
+ * Cold calls are "at least one", not "exactly one": Open Library's hydrate reads
+ * the work, its search-index doc and its series record, while IGDB's is a single
+ * query. What matters is that the warm path is 0.
+ */
+function checkUncached(label: string) {
+  const actual = outbound().provider;
+  check(label, actual >= 1, `${actual} provider request(s), expected at least 1`);
+}
+
 /** Key-order-insensitive: Postgres jsonb doesn't round-trip object key order. */
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
@@ -122,7 +132,7 @@ async function main() {
       .where(and(eq(metadataCache.source, key), eq(metadataCache.sourceId, sourceId)));
     reset();
     const hydrated = await provider.hydrate(sourceId);
-    checkCalls("cold hydrate hits the provider", 1);
+    checkUncached("cold hydrate hits the provider");
     console.log(`  payload keys: ${Object.keys(hydrated).join(", ")}`);
 
     console.log("5. warm hydrate");
@@ -133,7 +143,24 @@ async function main() {
     console.log("6. forced refresh (the 'Re-run lookup' button)");
     reset();
     await provider.hydrate(sourceId, { forceRefresh: true });
-    checkCalls("forceRefresh deliberately bypasses the cache", 1);
+    checkUncached("forceRefresh deliberately bypasses the cache");
+
+    console.log("7. a row cached under an older payload shape");
+    // Hydrate rows never expire, so a provider that starts returning new keys
+    // has to invalidate what's already cached — otherwise only "Re-run lookup"
+    // would ever pick the new shape up.
+    await db
+      .update(metadataCache)
+      .set({ payload: { title: "stale", __schema: 0 } })
+      .where(and(eq(metadataCache.source, key), eq(metadataCache.sourceId, sourceId)));
+    reset();
+    const refreshed = await provider.hydrate(sourceId);
+    checkUncached("a stale-schema row is refetched, not served");
+    check(
+      "the refetched payload replaced the stale one",
+      refreshed.title !== "stale",
+      `title is ${JSON.stringify(refreshed.title)}`,
+    );
   }
 
   const [searchRows, hydrateRows] = await Promise.all([

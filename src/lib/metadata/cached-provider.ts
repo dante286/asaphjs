@@ -8,6 +8,31 @@ import { getCachedHydrate, setCachedHydrate, getCachedSearch, setCachedSearch } 
 // forever — but slowly, because re-running searches is what burns the free tier.
 const SEARCH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Stamped into every cached hydrate payload. Bump it whenever a provider changes
+ * which canonical keys it returns: hydrate rows never expire, so without this a
+ * payload cached under the old shape would keep filling items from data the
+ * provider no longer returns that way, and only "Re-run lookup" would ever fix
+ * it. A version mismatch is treated as a cache miss.
+ *
+ * 2 — Open Library gained author/publisher/series/summary and a cover that
+ *     falls back to the search index.
+ */
+const PAYLOAD_SCHEMA_VERSION = 2;
+const SCHEMA_KEY = "__schema";
+
+function stampSchema(fields: HydratedFields): Record<string, unknown> {
+  return { ...fields, [SCHEMA_KEY]: PAYLOAD_SCHEMA_VERSION };
+}
+
+/** Null when the row predates the current payload shape — the caller refetches. */
+function readStamped(payload: Record<string, unknown>): HydratedFields | null {
+  if (payload[SCHEMA_KEY] !== PAYLOAD_SCHEMA_VERSION) return null;
+  const fields = { ...payload };
+  delete fields[SCHEMA_KEY];
+  return fields as HydratedFields;
+}
+
 type CachedProvider = Omit<MetadataProvider, "hydrate"> & {
   hydrate: (sourceId: string, opts?: { forceRefresh?: boolean }) => Promise<HydratedFields>;
 };
@@ -49,12 +74,13 @@ export function withCache(provider: MetadataProvider): CachedProvider {
     async hydrate(sourceId, opts) {
       if (!opts?.forceRefresh) {
         const cached = await getCachedHydrate(provider.key, sourceId);
-        if (cached) return cached.payload as HydratedFields;
+        const fields = cached ? readStamped(cached.payload) : null;
+        if (fields) return fields;
       }
 
       return single(`hydrate:${provider.key}:${sourceId}:${opts?.forceRefresh ? "fresh" : "cached"}`, async () => {
         const fields = await provider.hydrate(sourceId);
-        await setCachedHydrate(provider.key, sourceId, fields);
+        await setCachedHydrate(provider.key, sourceId, stampSchema(fields));
         return fields;
       });
     },

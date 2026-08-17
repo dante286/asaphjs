@@ -138,6 +138,34 @@ blank field:
   the actions in `src/actions/metadata.ts`; the items PATCH route strips it off client
   bodies so nobody can claim a match that never happened.
 
+### Provider quirks worth knowing
+
+- **IGDB** indexes far more than boxed releases, and unfiltered `search` ranks them
+  ahead of it — "chrono trigger" puts three Satellaview add-ons above the 1995 SNES
+  cartridge. Searches filter to main games, remakes, remasters, ports and expanded
+  editions, and show platform and year so you can tell the releases apart.
+- **Open Library** work records name their authors and series *by key*
+  (`/authors/OL1425963A`), not by value, and a work's `covers` array can be empty for a
+  work the search index does have art for. So a hydrate reads the work, its search-index
+  doc and its series record together — that's why matching Eragon now fills "Christopher
+  Paolini" and "The Inheritance Cycle" and lands the same cover the picker showed.
+- Open Library's `publisher` is every edition's publisher in one unordered list (Eragon
+  has 56 across a dozen languages), so it only fills the field when the list is
+  unambiguous. Subjects get filtered too — `nyt:graphic-books-and-manga=2021-04-11` and
+  `form:manga` are machine tags, not genres.
+
+### Cover art is copied, not hotlinked
+
+Applying a match pulls the provider's cover through the same sharp pipeline as an uploaded
+photo (`src/lib/metadata/cover-mirror.ts` → `saveUpload`), so the item ends up with a local
+`/api/uploads/…` URL and a grid thumbnail.
+
+Hotlinking looked fine and wasn't: Open Library redirects `covers.openlibrary.org` to
+archive.org, which extracts the JPEG from a zip on demand — measured at ~8s to first paint.
+The lookup would report that it filled the cover while the frame stayed empty, and a covers
+grid paid that per tile. Mirroring pays it once, at match time. If the fetch fails the item
+keeps the provider's URL, so a match never fails over a slow image.
+
 ### Staying inside the free tier
 
 IGDB allows 4 requests/second on a free Twitch app, so the cache is the feature, not an
@@ -151,18 +179,25 @@ optimization:
 - Concurrent identical calls collapse onto one upstream request (`cached-provider.ts`), and
   a fixed-window limiter caps outbound rate per provider (`rate-limiter.ts`) across every
   caller in the process.
+- Because hydrates never expire, each cached payload carries the schema version it was
+  written under. Bump `PAYLOAD_SCHEMA_VERSION` when a provider changes which canonical keys
+  it returns and stale rows refetch on next use — otherwise a book cached before Open
+  Library learned to return authors would stay authorless until someone re-ran it by hand.
 - Searches only ever run on an explicit click — never as-you-type — and the query field is
   pre-filled with the item's title, so the common case is one request per item, ever.
 
 `npm run lookup:check` proves this by counting outbound requests around each call rather
 than trusting a cache row exists: cold search 1 request, warm 0, five concurrent identical
-searches 1, cold hydrate 1, warm 0, `forceRefresh` 1. It purges only the rows for the query
-it tests. Takes a provider and query: `npm run lookup:check -- openlibrary "dune"`.
+searches 1, cold hydrate ≥1 (Open Library's reads three records, IGDB's one), warm 0,
+`forceRefresh` ≥1, and a row stamped with an older schema version refetches. It purges only
+the rows for the query it tests. Takes a provider and query:
+`npm run lookup:check -- openlibrary "dune"`.
 
 ## Item photos
 
-Covers come from a metadata provider when one has art, and otherwise from a photo the
-owner uploads on the item detail page (JPEG/PNG/WebP/GIF/AVIF, 10MB cap). Files land in
+Covers come from a metadata provider when one has art (copied into this same store — see
+above), and otherwise from a photo the owner uploads on the item detail page
+(JPEG/PNG/WebP/GIF/AVIF, 10MB cap). Files land in
 `UPLOADS_DIR` (default `./uploads`, a Docker volume in Compose) — no S3/R2 wiring.
 
 Nothing is stored as sent. `src/lib/uploads/store.ts` re-encodes every upload through

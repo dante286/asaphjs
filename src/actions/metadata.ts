@@ -7,6 +7,8 @@ import { getItem, patchItem } from "@/db/queries/items";
 import { getProvider } from "@/lib/metadata/providers";
 import { resolveLookupConfig } from "@/lib/metadata/lookup-config";
 import { buildPrefillPlan } from "@/lib/metadata/prefill";
+import { mirrorCover } from "@/lib/metadata/cover-mirror";
+import { deleteUpload } from "@/lib/uploads/store";
 import { toClientItem, type Item } from "@/lib/api/items-client";
 
 export type LookupApplyResult = {
@@ -49,6 +51,11 @@ async function applyHydrated(
   const hydrated = await getProvider(lookup.key).hydrate(sourceId, { forceRefresh: opts.forceRefresh });
   const plan = buildPrefillPlan(collection.fields, item, hydrated, { overwrite: opts.overwrite });
 
+  // Serve the art ourselves when we can — see mirrorCover for why hotlinking it
+  // reads as "the cover didn't apply". Falls back to the provider's URL.
+  const mirrored = plan.patch.coverUrl ? await mirrorCover(plan.patch.coverUrl) : null;
+  if (mirrored) plan.patch.coverUrl = mirrored;
+
   const result = await patchItem(
     itemId,
     {
@@ -60,8 +67,16 @@ async function applyHydrated(
     opts.ifMatchUpdatedAt,
   );
 
-  if (!result.ok && result.reason === "conflict") throw new Error("This item changed elsewhere — reload and try again.");
-  if (!result.ok) throw new Error("Item not found.");
+  if (!result.ok) {
+    // Don't leave mirrored bytes on disk for a row we didn't end up updating.
+    if (mirrored) await deleteUpload(mirrored);
+    if (result.reason === "conflict") throw new Error("This item changed elsewhere — reload and try again.");
+    throw new Error("Item not found.");
+  }
+
+  // No-op unless the cover we replaced was itself stored locally — an uploaded
+  // photo or an earlier mirror. Provider URLs are left alone.
+  if (mirrored) await deleteUpload(item.coverUrl);
 
   return { item: toClientItem(result.item), applied: plan.applied, keptExisting: plan.keptExisting };
 }
