@@ -214,6 +214,13 @@ provider cover URLs pass through untouched. Uploads written before thumbnails ex
 have no `_t` file, and the read route falls back to the full-size image for them rather
 than 404ing a tile.
 
+Files are removed with the rows that referenced them: deleting an item, deleting a
+collection (whose items go by `on delete cascade`, so their covers are read before the rows
+disappear), and rolling back an import batch all sweep up after themselves. That cleanup
+lives in `src/db/queries/*` rather than in the routes, so a future caller of `deleteItem`
+can't forget it, and in `src/lib/uploads/files.ts` rather than `store.ts` so unlinking a
+file doesn't drag sharp into that route's standalone trace.
+
 Three things worth knowing about that path:
 
 - Uploads are **not** under `public/`. Next indexes the public folder once at server

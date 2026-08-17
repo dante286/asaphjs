@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ilike, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { items } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
+import { deleteUploads } from "@/lib/uploads/files";
 import type { ExternalRef } from "@/types";
 
 /**
@@ -145,8 +146,20 @@ export async function patchItem(
   });
 }
 
+/**
+ * Takes the item's cover file with it. Cleanup lives here rather than in the
+ * route so it can't be forgotten by the next caller — a deleted item's photo is
+ * unreachable from the app the moment its row is gone, and `uploads/` is a
+ * mounted volume nobody sweeps. `deleteUploads` ignores provider URLs, so only
+ * files this app wrote are touched.
+ */
 export async function deleteItem(itemId: string) {
-  await db.delete(items).where(eq(items.id, itemId));
+  const removed = await db
+    .delete(items)
+    .where(eq(items.id, itemId))
+    .returning({ coverUrl: items.coverUrl });
+
+  await deleteUploads(removed.map((row) => row.coverUrl));
 }
 
 export async function getItem(itemId: string) {

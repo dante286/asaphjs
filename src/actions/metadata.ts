@@ -8,7 +8,7 @@ import { getProvider } from "@/lib/metadata/providers";
 import { resolveLookupConfig } from "@/lib/metadata/lookup-config";
 import { buildPrefillPlan } from "@/lib/metadata/prefill";
 import { mirrorCover } from "@/lib/metadata/cover-mirror";
-import { deleteUpload } from "@/lib/uploads/store";
+import { deleteUpload } from "@/lib/uploads/files";
 import { toClientItem, type Item } from "@/lib/api/items-client";
 
 export type LookupApplyResult = {

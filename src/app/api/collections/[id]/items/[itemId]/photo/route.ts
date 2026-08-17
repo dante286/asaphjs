@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { isGuardResponse, requireRole } from "@/lib/auth/api-guard";
 import { getItem, patchItem, type PatchResult } from "@/db/queries/items";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/uploads/limits";
-import { deleteUpload, saveUpload } from "@/lib/uploads/store";
+import { deleteUpload } from "@/lib/uploads/files";
+import { saveUpload } from "@/lib/uploads/store";
 
 // Multipart framing adds a little on top of the file itself; the authoritative
 // check is on the decoded part below.

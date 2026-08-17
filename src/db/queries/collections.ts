@@ -2,6 +2,7 @@ import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { collections, collectionMembers, items, user } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
+import { deleteUploads } from "@/lib/uploads/files";
 import type { CollectionFeatures, ImportMappings } from "@/types";
 
 export type CollectionCardRow = {
@@ -159,5 +160,13 @@ export async function updateCollectionSettings(
 }
 
 export async function deleteCollection(id: string) {
+  // Items go with the collection via `on delete cascade`, which the app never
+  // sees row by row — so their covers have to be read before the rows vanish.
+  const covers = await db
+    .select({ coverUrl: items.coverUrl })
+    .from(items)
+    .where(eq(items.collectionId, id));
+
   await db.delete(collections).where(eq(collections.id, id));
+  await deleteUploads(covers.map((row) => row.coverUrl));
 }
