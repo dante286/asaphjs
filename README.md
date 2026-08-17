@@ -29,7 +29,9 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 
 2. **Env vars.** Copy `.env.example` to `.env.local` and generate a `BETTER_AUTH_SECRET`
    (`openssl rand -base64 32`). Defaults for `DATABASE_URL` already match step 3 below, so
-   nothing else needs to change for local dev.
+   nothing else needs to change for local dev. `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET`
+   (register an app at [dev.twitch.tv/console](https://dev.twitch.tv/console)) are optional
+   — without them, game collections just show no metadata panel.
 
 3. **Database.** Any Postgres 14+ works; Postgres 18 is the tested/recommended version.
    Easiest is the `db` service already defined in `docker-compose.yml`:
@@ -96,6 +98,7 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | `npm run db:studio` | Drizzle Studio (browse the DB) |
 | `npm run db:seed` | Seed the 14 built-in templates (idempotent) |
 | `npm run db:seed -- --demo` | Same, plus the demo account and its three collections |
+| `npm run lookup:check` | Prove the metadata cache spares the provider's free tier (see below) |
 
 ## What's implemented
 
@@ -103,11 +106,58 @@ Auth (email/password), collections with template/blank/CSV creation, custom fiel
 per-field autosave (covers + table views, optimistic with conflict detection), CSV import
 into new or existing collections (type-guessing, mapping, batch rollback), sharing
 (per-collection invites with viewer/editor roles, public read-only links), account settings
-(profile, password, sessions, CSV/JSON export), and photo upload for item covers.
+(profile, password, sessions, CSV/JSON export), photo upload for item covers, and metadata
+lookups against IGDB (games) and Open Library (books/comics/manga).
 
-**Not implemented:** real metadata/cover lookups (IGDB/OpenLibrary/TMDB/etc.) — stubbed
-behind `src/lib/metadata/provider.ts`'s interface only, since those need third-party API
-keys.
+**Not implemented:** the TMDB, MusicBrainz and Rebrickable providers — the interface and
+registry in `src/lib/metadata` take them as-is, they just need keys and a `search`/`hydrate`
+pair each.
+
+## Metadata lookups
+
+The item detail page's Metadata panel searches the collection's provider, lists the
+candidates, and writes the picked one's fields into the item. Which provider a collection
+uses comes from `features.lookup`, falling back to a per-template default in
+`src/lib/metadata/lookup-config.ts` (`video_games` → IGDB, `books`/`comics`/`manga` →
+Open Library). A template with no default, or a provider whose keys are missing, renders no
+panel at all rather than a button that fails.
+
+What lands where is deliberately conservative, because a wrong autofill is worse than a
+blank field:
+
+- Providers return **canonical keys** (`publisher`, `platforms`, `series`, `genre`, …) and
+  `src/lib/metadata/prefill.ts` maps those onto whatever field ids the collection actually
+  has. Unmapped fields — every checkbox on Video Games included — are never touched: IGDB
+  can't know whether *your* copy still has the booklet insert.
+- Applying a match **fills blanks only**. Your own corrections survive it. "Overwrite
+  fields that already have a value" and "Re-run lookup" are the explicit opt-ins.
+- A select only accepts one of its own options, and a multi-platform release won't guess at
+  a free-text Console field — "Satellaview · SNES · Wii" is not an answer to which console
+  your copy is for.
+- `items.external_ref` records the match (source + id + timestamp) and is written only by
+  the actions in `src/actions/metadata.ts`; the items PATCH route strips it off client
+  bodies so nobody can claim a match that never happened.
+
+### Staying inside the free tier
+
+IGDB allows 4 requests/second on a free Twitch app, so the cache is the feature, not an
+optimization:
+
+- `metadata_cache` (by source id) and `metadata_search_cache` (by normalized query) are
+  read before any HTTP call. Hydrates never expire — box art and publisher don't change
+  once something ships — and searches expire after 30 days so a query that matched nothing
+  isn't wrong forever. Empty results are cached too, which is what stops an unmatched title
+  from being re-queried on every visit.
+- Concurrent identical calls collapse onto one upstream request (`cached-provider.ts`), and
+  a fixed-window limiter caps outbound rate per provider (`rate-limiter.ts`) across every
+  caller in the process.
+- Searches only ever run on an explicit click — never as-you-type — and the query field is
+  pre-filled with the item's title, so the common case is one request per item, ever.
+
+`npm run lookup:check` proves this by counting outbound requests around each call rather
+than trusting a cache row exists: cold search 1 request, warm 0, five concurrent identical
+searches 1, cold hydrate 1, warm 0, `forceRefresh` 1. It purges only the rows for the query
+it tests. Takes a provider and query: `npm run lookup:check -- openlibrary "dune"`.
 
 ## Item photos
 

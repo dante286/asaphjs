@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { fieldDefSchema } from "@/lib/fields/field-def";
+import { providerKeySchema } from "@/lib/metadata/types";
 import { z } from "zod";
 import {
   createCollection as createCollectionQuery,
@@ -19,7 +20,12 @@ const createCollectionSchema = z.object({
   fields: z.array(fieldDefSchema).min(1),
   defaultView: z.enum(["covers", "table"]).default("covers"),
   features: z
-    .object({ lending: z.boolean().optional(), verified: z.boolean().optional() })
+    .object({
+      lending: z.boolean().optional(),
+      verified: z.boolean().optional(),
+      // Overrides the provider the template would default to (lookup-config.ts).
+      lookup: providerKeySchema.optional(),
+    })
     .optional(),
 });
 

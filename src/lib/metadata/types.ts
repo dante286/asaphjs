@@ -13,9 +13,27 @@ export const candidateSchema = z.object({
 });
 export type Candidate = z.infer<typeof candidateSchema>;
 
-// hydrate() returns provider-shaped data; the per-template prefill map
-// (still open — see CLAUDE-PLAN.md) decides which keys land in which field id.
-export type HydratedFields = Record<string, unknown> & { coverUrl?: string };
+/**
+ * hydrate() returns canonical keys — never a provider's own field names — and
+ * src/lib/metadata/prefill.ts maps them onto whatever field ids a given
+ * collection happens to have (`platforms` -> the "Console" field on Video
+ * Games, the "Platform" field on someone's custom variant, nothing at all on
+ * Books). Providers fill in the keys they know; the rest stay absent.
+ */
+export type HydratedFields = {
+  title?: string;
+  publisher?: string;
+  developer?: string;
+  author?: string;
+  platforms?: string[];
+  genre?: string[];
+  series?: string;
+  releaseDate?: string; // YYYY-MM-DD
+  year?: number;
+  summary?: string;
+  coverUrl?: string;
+  sourceUrl?: string;
+} & Record<string, unknown>;
 
 export interface MetadataProvider {
   readonly key: ProviderKey;

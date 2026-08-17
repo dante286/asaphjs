@@ -10,6 +10,20 @@ type Serialized<T> = { [K in keyof T]: T[K] extends Date | null ? DateToString<T
 export type Item = Serialized<typeof items.$inferSelect>;
 export type ItemsPage = { rows: Item[]; total: number; page: number; pageSize: number };
 
+/**
+ * Server-rendered pages and Server Actions have to hand the client the same
+ * shape a fetch() of the items API would — JSON.stringify does this implicitly
+ * for route handlers, so anything returning rows directly does it here.
+ */
+export function toClientItem(row: typeof items.$inferSelect): Item {
+  return {
+    ...row,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    lentOn: row.lentOn ? String(row.lentOn) : null,
+  };
+}
+
 export type ItemsQuery = {
   q?: string;
   verifiedOnly?: boolean;

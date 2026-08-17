@@ -4,6 +4,8 @@ import { getCollectionForUser } from "@/db/queries/collections";
 import { resolveRole } from "@/db/queries/members";
 import { getItem, getItemNeighbors } from "@/db/queries/items";
 import { ItemDetail } from "@/components/collection/ItemDetail";
+import { resolveLookupConfig } from "@/lib/metadata/lookup-config";
+import { toClientItem } from "@/lib/api/items-client";
 
 export default async function ItemDetailPage({
   params,
@@ -23,20 +25,16 @@ export default async function ItemDetailPage({
 
   const neighbors = await getItemNeighbors(collection.id, itemId);
 
-  const itemSerialized = {
-    ...item,
-    createdAt: item.createdAt.toISOString(),
-    updatedAt: item.updatedAt.toISOString(),
-    lentOn: item.lentOn ? String(item.lentOn) : null,
-  };
-
   return (
     <div style={{ maxWidth: 1240, margin: "0 auto", padding: "clamp(18px,3vw,36px) clamp(14px,3vw,32px) 80px" }}>
       <ItemDetail
         collection={collection}
-        item={itemSerialized}
+        item={toClientItem(item)}
         canEdit={role === "owner" || role === "editor"}
         neighbors={neighbors ?? { position: 1, total: 1, prevId: null, nextId: null }}
+        // Resolved server-side: whether a provider is usable depends on env vars
+        // the client can't see.
+        lookup={resolveLookupConfig(collection)}
       />
     </div>
   );

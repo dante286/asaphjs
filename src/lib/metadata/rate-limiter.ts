@@ -9,7 +9,14 @@ class FixedWindowLimiter {
 
   constructor(private readonly capacity: number, refillMs: number) {
     this.tokens = capacity;
-    setInterval(() => this.refill(), refillMs);
+    // unref so the timer doesn't hold the event loop open — matters for
+    // short-lived processes that import a provider (scripts/check-lookup-cache.ts),
+    // not for the long-running server.
+    const timer: ReturnType<typeof setInterval> & { unref?: () => void } = setInterval(
+      () => this.refill(),
+      refillMs,
+    );
+    timer.unref?.();
   }
 
   private refill() {
