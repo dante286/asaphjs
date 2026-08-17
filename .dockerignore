@@ -7,9 +7,10 @@ npm-debug.log*
 # env files — pass secrets via --build-arg / compose env, not the build context
 .env*
 
-# local-only data
-public/uploads/*
-!public/uploads/.gitkeep
+# local-only data — item photos live in ./uploads (UPLOADS_DIR), and the image
+# makes its own empty one for the volume to mount over. They used to live under
+# public/uploads, which is why this rule pointed there.
+uploads
 
 README.md
 Dockerfile

@@ -37,7 +37,11 @@ RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs
 
 # `output: "standalone"` traces only the files next start actually needs,
-# so the runtime image doesn't carry the full node_modules tree.
+# so the runtime image doesn't carry the full node_modules tree. public/ is not
+# part of that trace, hence the separate copy — and it's kept in the repo by a
+# .gitkeep even though the app currently ships no static assets there (the
+# favicon is app/favicon.ico). Git doesn't track empty directories, so deleting
+# that file breaks this COPY and the whole image build with it.
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

@@ -80,7 +80,8 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    Or fully containerized instead of steps 1/6 — build and run the app itself in Docker
    too (still needs steps 2–4 for the database, plus 5 if you want demo data; copy
    `BETTER_AUTH_SECRET` from `.env.local` into a top-level `.env` file first, since Compose
-   reads that separately):
+   reads that separately — and `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET` with it if you want
+   game lookups in the container, which are otherwise just absent):
 
    ```bash
    docker compose up -d --build app
