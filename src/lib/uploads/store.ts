@@ -2,13 +2,30 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import sharp from "sharp";
+import {
+  NAME_PATTERN,
+  UPLOAD_URL_PREFIX,
+  fullNameForThumb,
+  isManagedUpload,
+  isThumbName,
+  thumbNameFor,
+} from "@/lib/uploads/urls";
 
 /**
- * The detail page renders the cover in a ~330px frame and the covers grid in
- * less, so this is already generous at 2x — it exists to stop a 4000px phone
- * photo being served whole, not to be a display size.
+ * The detail page renders the cover in a ~330px frame, so this is already
+ * generous at 2x — it exists to stop a 4000px phone photo being served whole,
+ * not to be a display size.
  */
 export const MAX_DIMENSION = 1600;
+
+/**
+ * The covers grid caps a tile at 182px wide on a 3/4 frame, so 500 on the
+ * longest edge covers the common portrait cover at 2x (375px wide) without
+ * baking in a crop. Landscape photos upscale slightly when `object-fit: cover`
+ * fills the frame; that beats shipping the 1600px file to every tile.
+ */
+export const THUMB_DIMENSION = 500;
+
 const WEBP_QUALITY = 82;
 
 /**
@@ -17,14 +34,6 @@ const WEBP_QUALITY = 82;
  * boot would 404 until the next restart. Reading it per request also keeps the
  * bytes off the build image and inside the mounted volume.
  */
-const URL_PREFIX = "/api/uploads/";
-
-/**
- * nanoid's alphabet is `A-Za-z0-9_-`, so a matching name can't contain a path
- * separator. `saveUpload` only ever writes `.webp` now; the other extensions
- * stay readable so files written before that keep resolving.
- */
-const NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}\.(jpg|png|webp|gif|avif)$/;
 
 const MIME_BY_EXT: Record<string, string> = {
   jpg: "image/jpeg",
@@ -59,8 +68,9 @@ export function sniffImageExt(bytes: Uint8Array): string | null {
 }
 
 /**
- * Re-encodes the upload to a bounded WebP and returns the URL to store on the
- * item, or null if the bytes aren't a decodable image.
+ * Re-encodes the upload to a bounded WebP plus a grid-sized thumbnail, and
+ * returns the URL of the full-size one to store on the item. Null if the bytes
+ * aren't a decodable image.
  *
  * Everything is re-encoded rather than stored as-sent, which buys three things
  * at once: phone photos stop being served at full resolution, EXIF is dropped
@@ -68,18 +78,34 @@ export function sniffImageExt(bytes: Uint8Array): string | null {
  * output libvips produced rather than a stranger's file. Orientation has to be
  * applied via `.rotate()` before that EXIF goes, or portrait shots come out
  * sideways. Animated GIFs keep their first frame only — these are covers.
+ *
+ * Only the full-size URL is stored; the thumb is found by name, so no schema
+ * change and provider covers keep working unchanged.
  */
 export async function saveUpload(bytes: Uint8Array): Promise<string | null> {
   // Cheap structural reject so obvious non-images never reach the decoder.
   if (!sniffImageExt(bytes)) return null;
 
-  let encoded: Buffer;
+  let full: Buffer;
+  let thumb: Buffer;
   try {
-    encoded = await sharp(bytes, { failOn: "error" })
+    full = await sharp(bytes, { failOn: "error" })
       .rotate()
       .resize({
         width: MAX_DIMENSION,
         height: MAX_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: WEBP_QUALITY })
+      .toBuffer();
+
+    // Derived from the bounded copy rather than the original: one less decode
+    // of a possibly-huge source, and orientation is already baked in.
+    thumb = await sharp(full)
+      .resize({
+        width: THUMB_DIMENSION,
+        height: THUMB_DIMENSION,
         fit: "inside",
         withoutEnlargement: true,
       })
@@ -92,28 +118,53 @@ export async function saveUpload(bytes: Uint8Array): Promise<string | null> {
   const dir = uploadsDir();
   await mkdir(dir, { recursive: true });
   const name = `${nanoid()}.webp`;
-  await writeFile(path.join(dir, name), encoded);
-  return `${URL_PREFIX}${name}`;
+
+  try {
+    await Promise.all([
+      writeFile(path.join(dir, name), full),
+      writeFile(path.join(dir, thumbNameFor(name)), thumb),
+    ]);
+  } catch {
+    // Don't leave half a pair behind for a URL we're about to not return.
+    await removeFile(dir, name);
+    await removeFile(dir, thumbNameFor(name));
+    return null;
+  }
+
+  return `${UPLOAD_URL_PREFIX}${name}`;
 }
 
-/** True only for URLs this store minted — provider cover URLs must never be unlinked. */
-export function isManagedUpload(url: string | null | undefined): url is string {
-  return Boolean(url?.startsWith(URL_PREFIX) && NAME_PATTERN.test(url.slice(URL_PREFIX.length)));
+function removeFile(dir: string, name: string): Promise<void> {
+  return unlink(path.join(dir, name)).catch(() => {});
 }
 
+/** Removes the full-size file and its thumbnail together. */
 export async function deleteUpload(url: string | null | undefined): Promise<void> {
   if (!isManagedUpload(url)) return;
-  await unlink(path.join(uploadsDir(), url.slice(URL_PREFIX.length))).catch(() => {});
+  const dir = uploadsDir();
+  const name = url.slice(UPLOAD_URL_PREFIX.length);
+  await Promise.all([removeFile(dir, name), removeFile(dir, thumbNameFor(name))]);
 }
 
 export async function readUpload(
   name: string,
 ): Promise<{ bytes: Uint8Array<ArrayBuffer>; mime: string } | null> {
   if (!NAME_PATTERN.test(name)) return null;
+
+  const dir = uploadsDir();
+  let bytes: Buffer;
   try {
-    const bytes = await readFile(path.join(uploadsDir(), name));
-    return { bytes: new Uint8Array(bytes), mime: MIME_BY_EXT[name.slice(name.lastIndexOf(".") + 1)] };
+    bytes = await readFile(path.join(dir, name));
   } catch {
-    return null;
+    // Uploads written before thumbnails existed have no `_t` file. Serving the
+    // full-size image beats a broken tile, and it self-corrects on re-upload.
+    if (!isThumbName(name)) return null;
+    try {
+      bytes = await readFile(path.join(dir, fullNameForThumb(name)));
+    } catch {
+      return null;
+    }
   }
+
+  return { bytes: new Uint8Array(bytes), mime: MIME_BY_EXT[name.slice(name.lastIndexOf(".") + 1)] };
 }

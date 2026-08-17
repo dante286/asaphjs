@@ -121,6 +121,14 @@ as WebP. That caps what a 4000px phone photo costs to serve, drops the EXIF bloc
 camera roll photo carries GPS coordinates), and means the bytes on disk are libvips
 output rather than a stranger's file. Animated GIFs keep their first frame only.
 
+Each upload also gets a 500px thumbnail at `<id>_t.webp`, which is what the covers grid
+and the public share page load — a 60-tile grid of phone photos costs ~1.5MB instead of
+~24MB. Only the full-size URL is stored on the item; `thumbUrlFor()` in
+`src/lib/uploads/urls.ts` derives the thumb name, so there's no schema change and
+provider cover URLs pass through untouched. Uploads written before thumbnails existed
+have no `_t` file, and the read route falls back to the full-size image for them rather
+than 404ing a tile.
+
 Three things worth knowing about that path:
 
 - Uploads are **not** under `public/`. Next indexes the public folder once at server
