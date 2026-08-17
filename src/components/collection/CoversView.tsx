@@ -1,6 +1,7 @@
 import { Blueprint } from "@/components/ui/Blueprint";
 import type { FieldDef } from "@/lib/fields/field-def";
 import { getFieldValue } from "@/lib/fields/item-values";
+import { thumbUrlFor } from "@/lib/uploads/urls";
 import type { Item } from "@/lib/api/items-client";
 
 const PLATES = [
@@ -27,22 +28,24 @@ export function CoversView({
       {items.map((item, i) => {
         const sub = cardField ? String(getFieldValue(item, cardField, fields.indexOf(cardField)) ?? "") : "";
         const flag = item.verified ? "Verified" : item.borrower ? `Lent — ${item.borrower}` : "";
+        // Uploads have a grid-sized derivative; provider covers come back as-is.
+        const cover = thumbUrlFor(item.coverUrl);
         return (
           <div key={item.id} style={{ cursor: "pointer" }} onClick={() => onOpenItem(item)}>
             <Blueprint
               className="duotone"
               style={{
                 aspectRatio: "3/4",
-                background: item.coverUrl ? undefined : PLATES[i % PLATES.length],
+                background: cover ? undefined : PLATES[i % PLATES.length],
                 display: "grid",
-                placeItems: item.coverUrl ? "stretch" : "end start",
-                padding: item.coverUrl ? 0 : 12,
+                placeItems: cover ? "stretch" : "end start",
+                padding: cover ? 0 : 12,
                 overflow: "hidden",
               }}
             >
-              {item.coverUrl ? (
+              {cover ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.coverUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src={cover} alt="" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
                 <span
                   style={{

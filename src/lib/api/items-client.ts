@@ -45,6 +45,16 @@ export class ConflictError extends Error {
   }
 }
 
+/** Surfaces the route's own message (size cap, unsupported format) when there is one. */
+async function errorFrom(res: Response, fallback: string): Promise<Error> {
+  try {
+    const body = await res.json();
+    return new Error(typeof body?.error === "string" ? body.error : fallback);
+  } catch {
+    return new Error(fallback);
+  }
+}
+
 export async function patchItemRequest(
   collectionId: string,
   itemId: string,
@@ -61,6 +71,46 @@ export async function patchItemRequest(
     throw new ConflictError(body.current);
   }
   if (!res.ok) throw new Error("Failed to save.");
+  return res.json();
+}
+
+export async function uploadItemPhotoRequest(
+  collectionId: string,
+  itemId: string,
+  file: File,
+  ifMatchUpdatedAt: string,
+): Promise<Item> {
+  const body = new FormData();
+  body.append("photo", file);
+
+  // No Content-Type header — the browser has to set the multipart boundary itself.
+  const res = await fetch(`/api/collections/${collectionId}/items/${itemId}/photo`, {
+    method: "POST",
+    headers: { "If-Match": ifMatchUpdatedAt },
+    body,
+  });
+  if (res.status === 409) {
+    const payload = await res.json();
+    throw new ConflictError(payload.current);
+  }
+  if (!res.ok) throw await errorFrom(res, "Failed to upload the photo.");
+  return res.json();
+}
+
+export async function removeItemPhotoRequest(
+  collectionId: string,
+  itemId: string,
+  ifMatchUpdatedAt: string,
+): Promise<Item> {
+  const res = await fetch(`/api/collections/${collectionId}/items/${itemId}/photo`, {
+    method: "DELETE",
+    headers: { "If-Match": ifMatchUpdatedAt },
+  });
+  if (res.status === 409) {
+    const payload = await res.json();
+    throw new ConflictError(payload.current);
+  }
+  if (!res.ok) throw await errorFrom(res, "Failed to remove the photo.");
   return res.json();
 }
 

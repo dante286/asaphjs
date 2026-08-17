@@ -20,6 +20,10 @@
 # production
 /build
 
+# uploaded item photos (see UPLOADS_DIR)
+/uploads/*
+!/uploads/.gitkeep
+
 # misc
 .DS_Store
 *.pem
