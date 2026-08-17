@@ -11,6 +11,9 @@ export async function PATCH(
   if (isGuardResponse(guard)) return guard;
 
   const body = await request.json();
+  // externalRef is lookup provenance the metadata actions own — dropped here so
+  // a client can't claim an item was matched from a provider it never was.
+  if (body && typeof body === "object") delete body.externalRef;
   const ifMatch = request.headers.get("if-match") ?? undefined;
 
   const result = await patchItem(itemId, body, ifMatch);

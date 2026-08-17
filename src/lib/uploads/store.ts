@@ -1,15 +1,9 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import sharp from "sharp";
-import {
-  NAME_PATTERN,
-  UPLOAD_URL_PREFIX,
-  fullNameForThumb,
-  isManagedUpload,
-  isThumbName,
-  thumbNameFor,
-} from "@/lib/uploads/urls";
+import { UPLOAD_URL_PREFIX, thumbNameFor } from "@/lib/uploads/urls";
+import { removeUploadFile, uploadsDir } from "@/lib/uploads/files";
 
 /**
  * The detail page renders the cover in a ~330px frame, so this is already
@@ -27,25 +21,6 @@ export const MAX_DIMENSION = 1600;
 export const THUMB_DIMENSION = 500;
 
 const WEBP_QUALITY = 82;
-
-/**
- * Uploads are served through a route handler, not out of `public/`: Next scans
- * the public folder once at server start in production, so a file written after
- * boot would 404 until the next restart. Reading it per request also keeps the
- * bytes off the build image and inside the mounted volume.
- */
-
-const MIME_BY_EXT: Record<string, string> = {
-  jpg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  gif: "image/gif",
-  avif: "image/avif",
-};
-
-export function uploadsDir(): string {
-  return process.env.UPLOADS_DIR ?? path.join(process.cwd(), "uploads");
-}
 
 function ascii(bytes: Uint8Array, start: number, length: number): string {
   return String.fromCharCode(...bytes.subarray(start, start + length));
@@ -126,45 +101,9 @@ export async function saveUpload(bytes: Uint8Array): Promise<string | null> {
     ]);
   } catch {
     // Don't leave half a pair behind for a URL we're about to not return.
-    await removeFile(dir, name);
-    await removeFile(dir, thumbNameFor(name));
+    await Promise.all([removeUploadFile(name), removeUploadFile(thumbNameFor(name))]);
     return null;
   }
 
   return `${UPLOAD_URL_PREFIX}${name}`;
-}
-
-function removeFile(dir: string, name: string): Promise<void> {
-  return unlink(path.join(dir, name)).catch(() => {});
-}
-
-/** Removes the full-size file and its thumbnail together. */
-export async function deleteUpload(url: string | null | undefined): Promise<void> {
-  if (!isManagedUpload(url)) return;
-  const dir = uploadsDir();
-  const name = url.slice(UPLOAD_URL_PREFIX.length);
-  await Promise.all([removeFile(dir, name), removeFile(dir, thumbNameFor(name))]);
-}
-
-export async function readUpload(
-  name: string,
-): Promise<{ bytes: Uint8Array<ArrayBuffer>; mime: string } | null> {
-  if (!NAME_PATTERN.test(name)) return null;
-
-  const dir = uploadsDir();
-  let bytes: Buffer;
-  try {
-    bytes = await readFile(path.join(dir, name));
-  } catch {
-    // Uploads written before thumbnails existed have no `_t` file. Serving the
-    // full-size image beats a broken tile, and it self-corrects on re-upload.
-    if (!isThumbName(name)) return null;
-    try {
-      bytes = await readFile(path.join(dir, fullNameForThumb(name)));
-    } catch {
-      return null;
-    }
-  }
-
-  return { bytes: new Uint8Array(bytes), mime: MIME_BY_EXT[name.slice(name.lastIndexOf(".") + 1)] };
 }

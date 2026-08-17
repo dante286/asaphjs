@@ -6,12 +6,14 @@ import { Blueprint } from "@/components/ui/Blueprint";
 import { Tag } from "@/components/ui/Tag";
 import { FieldCell } from "@/components/collection/FieldCell";
 import { CoverPhoto } from "@/components/collection/CoverPhoto";
+import { MetadataLookupPanel } from "@/components/collection/MetadataLookupPanel";
 import { SaveStatusIndicator, type SaveStatus } from "@/components/collection/SaveStatusIndicator";
 import { ConflictError, deleteItemRequest, patchItemRequest, type Item } from "@/lib/api/items-client";
 import { isTitleField, isFixedColumnField, getFieldValue, buildPatchForField } from "@/lib/fields/item-values";
 import type { ItemPatch, ItemNeighbors } from "@/db/queries/items";
 import type { collections } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
+import type { LookupConfig } from "@/lib/metadata/lookup-config";
 
 const DEBOUNCED_TYPES = new Set(["text", "longtext", "number", "url", "currency", "tags"]);
 const DEBOUNCE_MS = 400;
@@ -29,17 +31,22 @@ export function ItemDetail({
   item: initialItem,
   canEdit,
   neighbors,
+  lookup,
 }: {
   collection: typeof collections.$inferSelect;
   item: Item;
   canEdit: boolean;
   neighbors: ItemNeighbors;
+  /** null when this collection's template has no provider, or its keys aren't set. */
+  lookup: LookupConfig | null;
 }) {
   const router = useRouter();
   const [item, setItem] = useState(initialItem);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "idle" });
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  // Viewers get no lookup panel — matching is an edit.
+  const showLookupPanel = canEdit ? lookup : null;
   const fields = collection.fields;
   const detailFields = fields
     .map((field, index) => ({ field, index }))
@@ -145,6 +152,17 @@ export function ItemDetail({
             onStatusChange={setSaveStatus}
           />
 
+          {showLookupPanel && (
+            <MetadataLookupPanel
+              collectionId={collection.id}
+              item={item}
+              lookup={showLookupPanel}
+              canEdit={canEdit}
+              onItemUpdate={setItem}
+              onStatusChange={setSaveStatus}
+            />
+          )}
+
           <Blueprint style={{ padding: "12px 14px", display: "grid", gap: 10, fontSize: 12.5 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: canEdit ? "pointer" : "default" }}>
               <input
@@ -180,10 +198,13 @@ export function ItemDetail({
             </div>
           </Blueprint>
 
+          {/* The lookup panel above carries the match provenance when it renders;
+              this line covers the cases where it doesn't (viewer, or a collection
+              with no provider) so a matched item never looks unmatched. */}
           <div style={{ fontSize: 11.5, color: "color-mix(in srgb, var(--color-text) 50%, transparent)", lineHeight: 1.5 }}>
-            {item.externalRef
-              ? `Metadata matched from ${item.externalRef.source} · added ${new Date(item.createdAt).toLocaleDateString()}`
-              : `Added ${new Date(item.createdAt).toLocaleDateString()}`}
+            {showLookupPanel || !item.externalRef
+              ? `Added ${new Date(item.createdAt).toLocaleDateString()}`
+              : `Metadata matched from ${item.externalRef.source} · added ${new Date(item.createdAt).toLocaleDateString()}`}
           </div>
         </div>
 

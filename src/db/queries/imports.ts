@@ -4,6 +4,7 @@ import { importBatches, items } from "@/db/schema";
 import type { ImportRowError } from "@/db/schema/import-batches";
 import type { FieldDef } from "@/lib/fields/field-def";
 import { isTitleField } from "@/lib/fields/item-values";
+import { deleteUploads } from "@/lib/uploads/files";
 import type { ImportMappings } from "@/types";
 
 const TRUE_VALUES = new Set(["y", "yes", "true", "1"]);
@@ -106,6 +107,13 @@ export async function commitImport(params: CommitImportParams) {
 }
 
 export async function rollbackImportBatch(batchId: string) {
-  await db.delete(items).where(eq(items.importBatchId, batchId));
+  // An imported row starts without a cover, but nothing stops someone adding a
+  // photo (or running a lookup) before deciding the whole batch was a mistake.
+  const removed = await db
+    .delete(items)
+    .where(eq(items.importBatchId, batchId))
+    .returning({ coverUrl: items.coverUrl });
+
   await db.update(importBatches).set({ status: "rolled_back" }).where(eq(importBatches.id, batchId));
+  await deleteUploads(removed.map((row) => row.coverUrl));
 }

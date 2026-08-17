@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readUpload } from "@/lib/uploads/store";
+import { readUpload } from "@/lib/uploads/files";
 
 /**
  * Deliberately unauthenticated: covers are rendered by `<img>` on public share

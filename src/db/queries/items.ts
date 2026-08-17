@@ -2,6 +2,8 @@ import { and, asc, desc, eq, ilike, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { items } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
+import { deleteUploads } from "@/lib/uploads/files";
+import type { ExternalRef } from "@/types";
 
 /**
  * The single place the public-share stripping rule is enforced — used by
@@ -30,6 +32,13 @@ export type ItemPatch = Partial<{
   notes: string | null;
   values: Record<string, unknown | null>; // null value => delete that key
 }>;
+
+/**
+ * externalRef is provenance the server writes when a metadata lookup is applied
+ * — never something a client sends, which is why it's separate from the
+ * wire-facing ItemPatch the items PATCH route accepts.
+ */
+export type InternalItemPatch = ItemPatch & Partial<{ externalRef: ExternalRef | null }>;
 
 export type ListItemsParams = {
   collectionId: string;
@@ -90,7 +99,7 @@ export type PatchResult =
 
 export async function patchItem(
   itemId: string,
-  patch: ItemPatch,
+  patch: InternalItemPatch,
   ifMatchUpdatedAt?: string,
 ): Promise<PatchResult> {
   return db.transaction(async (tx) => {
@@ -113,6 +122,7 @@ export async function patchItem(
     if (patch.borrower !== undefined) fixed.borrower = patch.borrower;
     if (patch.lentOn !== undefined) fixed.lentOn = patch.lentOn;
     if (patch.notes !== undefined) fixed.notes = patch.notes;
+    if (patch.externalRef !== undefined) fixed.externalRef = patch.externalRef;
 
     let valuesExpr = items.values;
     if (patch.values) {
@@ -136,8 +146,20 @@ export async function patchItem(
   });
 }
 
+/**
+ * Takes the item's cover file with it. Cleanup lives here rather than in the
+ * route so it can't be forgotten by the next caller — a deleted item's photo is
+ * unreachable from the app the moment its row is gone, and `uploads/` is a
+ * mounted volume nobody sweeps. `deleteUploads` ignores provider URLs, so only
+ * files this app wrote are touched.
+ */
 export async function deleteItem(itemId: string) {
-  await db.delete(items).where(eq(items.id, itemId));
+  const removed = await db
+    .delete(items)
+    .where(eq(items.id, itemId))
+    .returning({ coverUrl: items.coverUrl });
+
+  await deleteUploads(removed.map((row) => row.coverUrl));
 }
 
 export async function getItem(itemId: string) {

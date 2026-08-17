@@ -29,7 +29,9 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 
 2. **Env vars.** Copy `.env.example` to `.env.local` and generate a `BETTER_AUTH_SECRET`
    (`openssl rand -base64 32`). Defaults for `DATABASE_URL` already match step 3 below, so
-   nothing else needs to change for local dev.
+   nothing else needs to change for local dev. `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET`
+   (register an app at [dev.twitch.tv/console](https://dev.twitch.tv/console)) are optional
+   — without them, game collections just show no metadata panel.
 
 3. **Database.** Any Postgres 14+ works; Postgres 18 is the tested/recommended version.
    Easiest is the `db` service already defined in `docker-compose.yml`:
@@ -96,6 +98,7 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | `npm run db:studio` | Drizzle Studio (browse the DB) |
 | `npm run db:seed` | Seed the 14 built-in templates (idempotent) |
 | `npm run db:seed -- --demo` | Same, plus the demo account and its three collections |
+| `npm run lookup:check` | Prove the metadata cache spares the provider's free tier (see below) |
 
 ## What's implemented
 
@@ -103,16 +106,98 @@ Auth (email/password), collections with template/blank/CSV creation, custom fiel
 per-field autosave (covers + table views, optimistic with conflict detection), CSV import
 into new or existing collections (type-guessing, mapping, batch rollback), sharing
 (per-collection invites with viewer/editor roles, public read-only links), account settings
-(profile, password, sessions, CSV/JSON export), and photo upload for item covers.
+(profile, password, sessions, CSV/JSON export), photo upload for item covers, and metadata
+lookups against IGDB (games) and Open Library (books/comics/manga).
 
-**Not implemented:** real metadata/cover lookups (IGDB/OpenLibrary/TMDB/etc.) — stubbed
-behind `src/lib/metadata/provider.ts`'s interface only, since those need third-party API
-keys.
+**Not implemented:** the TMDB, MusicBrainz and Rebrickable providers — the interface and
+registry in `src/lib/metadata` take them as-is, they just need keys and a `search`/`hydrate`
+pair each.
+
+## Metadata lookups
+
+The item detail page's Metadata panel searches the collection's provider, lists the
+candidates, and writes the picked one's fields into the item. Which provider a collection
+uses comes from `features.lookup`, falling back to a per-template default in
+`src/lib/metadata/lookup-config.ts` (`video_games` → IGDB, `books`/`comics`/`manga` →
+Open Library). A template with no default, or a provider whose keys are missing, renders no
+panel at all rather than a button that fails.
+
+What lands where is deliberately conservative, because a wrong autofill is worse than a
+blank field:
+
+- Providers return **canonical keys** (`publisher`, `platforms`, `series`, `genre`, …) and
+  `src/lib/metadata/prefill.ts` maps those onto whatever field ids the collection actually
+  has. Unmapped fields — every checkbox on Video Games included — are never touched: IGDB
+  can't know whether *your* copy still has the booklet insert.
+- Applying a match **fills blanks only**. Your own corrections survive it. "Overwrite
+  fields that already have a value" and "Re-run lookup" are the explicit opt-ins.
+- A select only accepts one of its own options, and a multi-platform release won't guess at
+  a free-text Console field — "Satellaview · SNES · Wii" is not an answer to which console
+  your copy is for.
+- `items.external_ref` records the match (source + id + timestamp) and is written only by
+  the actions in `src/actions/metadata.ts`; the items PATCH route strips it off client
+  bodies so nobody can claim a match that never happened.
+
+### Provider quirks worth knowing
+
+- **IGDB** indexes far more than boxed releases, and unfiltered `search` ranks them
+  ahead of it — "chrono trigger" puts three Satellaview add-ons above the 1995 SNES
+  cartridge. Searches filter to main games, remakes, remasters, ports and expanded
+  editions, and show platform and year so you can tell the releases apart.
+- **Open Library** work records name their authors and series *by key*
+  (`/authors/OL1425963A`), not by value, and a work's `covers` array can be empty for a
+  work the search index does have art for. So a hydrate reads the work, its search-index
+  doc and its series record together — that's why matching Eragon now fills "Christopher
+  Paolini" and "The Inheritance Cycle" and lands the same cover the picker showed.
+- Open Library's `publisher` is every edition's publisher in one unordered list (Eragon
+  has 56 across a dozen languages), so it only fills the field when the list is
+  unambiguous. Subjects get filtered too — `nyt:graphic-books-and-manga=2021-04-11` and
+  `form:manga` are machine tags, not genres.
+
+### Cover art is copied, not hotlinked
+
+Applying a match pulls the provider's cover through the same sharp pipeline as an uploaded
+photo (`src/lib/metadata/cover-mirror.ts` → `saveUpload`), so the item ends up with a local
+`/api/uploads/…` URL and a grid thumbnail.
+
+Hotlinking looked fine and wasn't: Open Library redirects `covers.openlibrary.org` to
+archive.org, which extracts the JPEG from a zip on demand — measured at ~8s to first paint.
+The lookup would report that it filled the cover while the frame stayed empty, and a covers
+grid paid that per tile. Mirroring pays it once, at match time. If the fetch fails the item
+keeps the provider's URL, so a match never fails over a slow image.
+
+### Staying inside the free tier
+
+IGDB allows 4 requests/second on a free Twitch app, so the cache is the feature, not an
+optimization:
+
+- `metadata_cache` (by source id) and `metadata_search_cache` (by normalized query) are
+  read before any HTTP call. Hydrates never expire — box art and publisher don't change
+  once something ships — and searches expire after 30 days so a query that matched nothing
+  isn't wrong forever. Empty results are cached too, which is what stops an unmatched title
+  from being re-queried on every visit.
+- Concurrent identical calls collapse onto one upstream request (`cached-provider.ts`), and
+  a fixed-window limiter caps outbound rate per provider (`rate-limiter.ts`) across every
+  caller in the process.
+- Because hydrates never expire, each cached payload carries the schema version it was
+  written under. Bump `PAYLOAD_SCHEMA_VERSION` when a provider changes which canonical keys
+  it returns and stale rows refetch on next use — otherwise a book cached before Open
+  Library learned to return authors would stay authorless until someone re-ran it by hand.
+- Searches only ever run on an explicit click — never as-you-type — and the query field is
+  pre-filled with the item's title, so the common case is one request per item, ever.
+
+`npm run lookup:check` proves this by counting outbound requests around each call rather
+than trusting a cache row exists: cold search 1 request, warm 0, five concurrent identical
+searches 1, cold hydrate ≥1 (Open Library's reads three records, IGDB's one), warm 0,
+`forceRefresh` ≥1, and a row stamped with an older schema version refetches. It purges only
+the rows for the query it tests. Takes a provider and query:
+`npm run lookup:check -- openlibrary "dune"`.
 
 ## Item photos
 
-Covers come from a metadata provider when one has art, and otherwise from a photo the
-owner uploads on the item detail page (JPEG/PNG/WebP/GIF/AVIF, 10MB cap). Files land in
+Covers come from a metadata provider when one has art (copied into this same store — see
+above), and otherwise from a photo the owner uploads on the item detail page
+(JPEG/PNG/WebP/GIF/AVIF, 10MB cap). Files land in
 `UPLOADS_DIR` (default `./uploads`, a Docker volume in Compose) — no S3/R2 wiring.
 
 Nothing is stored as sent. `src/lib/uploads/store.ts` re-encodes every upload through
@@ -128,6 +213,13 @@ and the public share page load — a 60-tile grid of phone photos costs ~1.5MB i
 provider cover URLs pass through untouched. Uploads written before thumbnails existed
 have no `_t` file, and the read route falls back to the full-size image for them rather
 than 404ing a tile.
+
+Files are removed with the rows that referenced them: deleting an item, deleting a
+collection (whose items go by `on delete cascade`, so their covers are read before the rows
+disappear), and rolling back an import batch all sweep up after themselves. That cleanup
+lives in `src/db/queries/*` rather than in the routes, so a future caller of `deleteItem`
+can't forget it, and in `src/lib/uploads/files.ts` rather than `store.ts` so unlinking a
+file doesn't drag sharp into that route's standalone trace.
 
 Three things worth knowing about that path:
 
