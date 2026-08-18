@@ -195,6 +195,10 @@ Applying a match pulls the provider's cover through the same sharp pipeline as a
 photo (`src/lib/metadata/cover-mirror.ts` → `saveUpload`), so the item ends up with a local
 `/api/uploads/…` URL and a grid thumbnail.
 
+`mirrorCover` only fetches from an allowlist of provider image hosts, so adding a provider
+means adding its host — a missing one fails the check silently and the item keeps the
+provider's URL, which still renders. The only way to catch it is to look at what got stored.
+
 Hotlinking looked fine and wasn't: Open Library redirects `covers.openlibrary.org` to
 archive.org, which extracts the JPEG from a zip on demand — measured at ~8s to first paint.
 The lookup would report that it filled the cover while the frame stayed empty, and a covers

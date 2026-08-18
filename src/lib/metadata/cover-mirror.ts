@@ -6,13 +6,17 @@ import { saveUpload } from "@/lib/uploads/store";
  * this app's own provider code, but they round-trip through `metadata_cache` as
  * plain JSON, so the host is checked again before anything is fetched.
  */
-const COVER_HOSTS = new Set(["images.igdb.com", "covers.openlibrary.org"]);
+const COVER_HOSTS = new Set(["images.igdb.com", "covers.openlibrary.org", "image.tmdb.org"]);
 
 const FETCH_TIMEOUT_MS = 15_000;
 
 /**
  * Copies a provider's cover into local storage and returns the app-served URL,
  * or null to keep using the provider's own URL.
+ *
+ * A provider missing from COVER_HOSTS fails this check silently and the item
+ * keeps the provider's URL — it still renders, so the only way to notice is to
+ * look at what got stored. Adding a provider means adding its image host here.
  *
  * Worth the round trip because a hotlinked cover is slow in a way that reads as
  * broken: Open Library redirects `covers.openlibrary.org` to archive.org, which
