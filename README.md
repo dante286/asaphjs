@@ -107,6 +107,7 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | `npm run db:seed` | Seed the 15 built-in templates (idempotent) |
 | `npm run db:seed -- --demo` | Same, plus the demo account and its three collections |
 | `npm run lookup:check` | Prove the metadata cache spares the provider's free tier (see below) |
+| `npm run covers:backfill` | Mirror already-matched items' provider covers (dry run; `-- --apply` writes) |
 
 ## What's implemented
 
@@ -198,6 +199,16 @@ photo (`src/lib/metadata/cover-mirror.ts` → `saveUpload`), so the item ends up
 `mirrorCover` only fetches from an allowlist of provider image hosts, so adding a provider
 means adding its host — a missing one fails the check silently and the item keeps the
 provider's URL, which still renders. The only way to catch it is to look at what got stored.
+
+Items matched before their host was on that list stay hotlinked, and re-running the lookup
+won't heal them: `buildPrefillPlan` only patches `coverUrl` when the hydrated URL differs
+from the stored one, and for those it's the same string, so `mirrorCover` is never reached.
+`npm run covers:backfill` walks items whose cover isn't local yet and mirrors what it can.
+It's a dry run unless passed `--apply`, narrows with `--collection=<slug>`, `--host=<host>`
+and `--limit=<n>`, and is safe to rerun — anything already local is skipped, and a failed
+fetch leaves the item alone so the next run retries it. It writes `cover_url` only, leaving
+`updated_at` alone: where the bytes live isn't an edit to the item, and bumping it would
+push every backfilled row to the top of "recently updated".
 
 Hotlinking looked fine and wasn't: Open Library redirects `covers.openlibrary.org` to
 archive.org, which extracts the JPEG from a zip on demand — measured at ~8s to first paint.

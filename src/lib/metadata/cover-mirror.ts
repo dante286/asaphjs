@@ -11,6 +11,21 @@ const COVER_HOSTS = new Set(["images.igdb.com", "covers.openlibrary.org", "image
 const FETCH_TIMEOUT_MS = 15_000;
 
 /**
+ * Whether this URL is one `mirrorCover` would even try to fetch. Exported so
+ * scripts/backfill-covers.ts can tell "we could mirror this and haven't yet"
+ * apart from "no provider owns this URL", rather than inferring it from a null.
+ */
+export function isMirrorableCoverUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && COVER_HOSTS.has(parsed.hostname);
+}
+
+/**
  * Copies a provider's cover into local storage and returns the app-served URL,
  * or null to keep using the provider's own URL.
  *
@@ -30,13 +45,7 @@ const FETCH_TIMEOUT_MS = 15_000;
  * shouldn't cost the caller the metadata it just fetched.
  */
 export async function mirrorCover(url: string): Promise<string | null> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "https:" || !COVER_HOSTS.has(parsed.hostname)) return null;
+  if (!isMirrorableCoverUrl(url)) return null;
 
   try {
     const res = await fetch(url, {
