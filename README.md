@@ -29,9 +29,13 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 
 2. **Env vars.** Copy `.env.example` to `.env.local` and generate a `BETTER_AUTH_SECRET`
    (`openssl rand -base64 32`). Defaults for `DATABASE_URL` already match step 3 below, so
-   nothing else needs to change for local dev. `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET`
-   (register an app at [dev.twitch.tv/console](https://dev.twitch.tv/console)) are optional
-   — without them, game collections just show no metadata panel.
+   nothing else needs to change for local dev. The metadata provider keys are optional —
+   without them those collections just show no metadata panel: `IGDB_CLIENT_ID`/
+   `IGDB_CLIENT_SECRET` (register an app at
+   [dev.twitch.tv/console](https://dev.twitch.tv/console)) for games, and `TMDB_API_KEY`
+   — a v4 **Read Access Token** from
+   [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api), not the legacy
+   v3 key — for movies and anime.
 
 3. **Database.** Any Postgres 14+ works; Postgres 18 is the tested/recommended version.
    Easiest is the `db` service already defined in `docker-compose.yml`:
@@ -80,8 +84,8 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    Or fully containerized instead of steps 1/6 — build and run the app itself in Docker
    too (still needs steps 2–4 for the database, plus 5 if you want demo data; copy
    `BETTER_AUTH_SECRET` from `.env.local` into a top-level `.env` file first, since Compose
-   reads that separately — and `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET` with it if you want
-   game lookups in the container, which are otherwise just absent):
+   reads that separately — and `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET`/`TMDB_API_KEY` with it
+   if you want metadata lookups in the container, which are otherwise just absent):
 
    ```bash
    docker compose up -d --build app
@@ -108,20 +112,20 @@ per-field autosave (covers + table views, optimistic with conflict detection), C
 into new or existing collections (type-guessing, mapping, batch rollback), sharing
 (per-collection invites with viewer/editor roles, public read-only links), account settings
 (profile, password, sessions, CSV/JSON export), photo upload for item covers, and metadata
-lookups against IGDB (games) and Open Library (books/comics/manga).
+lookups against IGDB (games), Open Library (books/comics/manga) and TMDB (movies/anime).
 
-**Not implemented:** the TMDB, MusicBrainz and Rebrickable providers — the interface and
-registry in `src/lib/metadata` take them as-is, they just need keys and a `search`/`hydrate`
-pair each.
+**Not implemented:** the MusicBrainz and Rebrickable providers — the interface and registry
+in `src/lib/metadata` take them as-is, they just need keys and a `search`/`hydrate` pair
+each.
 
 ## Metadata lookups
 
 The item detail page's Metadata panel searches the collection's provider, lists the
 candidates, and writes the picked one's fields into the item. Which provider a collection
 uses comes from `features.lookup`, falling back to a per-template default in
-`src/lib/metadata/lookup-config.ts` (`video_games` → IGDB, `books`/`comics`/`manga` →
-Open Library). A template with no default, or a provider whose keys are missing, renders no
-panel at all rather than a button that fails.
+`src/lib/metadata/lookup-config.ts` (`video_games` → IGDB, `books`/`comics`/`manga`/
+`strategy_guides` → Open Library, `movies`/`anime` → TMDB). A template with no default, or a
+provider whose keys are missing, renders no panel at all rather than a button that fails.
 
 What lands where is deliberately conservative, because a wrong autofill is worse than a
 blank field:
@@ -154,6 +158,13 @@ blank field:
   has 56 across a dozen languages), so it only fills the field when the list is
   unambiguous. Subjects get filtered too — `nyt:graphic-books-and-manga=2021-04-11` and
   `form:manga` are machine tags, not genres.
+- **TMDB** covers both templates it's wired to off one `search/multi` call, because the
+  Anime template holds films and series side by side — a source id is `movie:603` or
+  `tv:1396` so a hydrate knows which endpoint to read, and TV hits are labelled "TV" in the
+  picker to tell *Nausicaä* the film from a same-named series. Only movies group into
+  franchises (`belongs_to_collection`); TMDB has no TV equivalent, so a show's Series field
+  is left for the owner rather than filled with a guess. Episode- and season-level data is
+  out of scope here — that's what would argue for AniList/MAL later.
 
 ### Cover art is copied, not hotlinked
 
@@ -189,10 +200,10 @@ optimization:
 
 `npm run lookup:check` proves this by counting outbound requests around each call rather
 than trusting a cache row exists: cold search 1 request, warm 0, five concurrent identical
-searches 1, cold hydrate ≥1 (Open Library's reads three records, IGDB's one), warm 0,
-`forceRefresh` ≥1, and a row stamped with an older schema version refetches. It purges only
-the rows for the query it tests. Takes a provider and query:
-`npm run lookup:check -- openlibrary "dune"`.
+searches 1, cold hydrate ≥1 (Open Library's reads three records, IGDB's and TMDB's one),
+warm 0, `forceRefresh` ≥1, and a row stamped with an older schema version refetches. It
+purges only the rows for the query it tests. Takes a provider and query:
+`npm run lookup:check -- tmdb "dune"`.
 
 ## Item photos
 
