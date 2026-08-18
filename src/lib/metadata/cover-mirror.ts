@@ -6,13 +6,32 @@ import { saveUpload } from "@/lib/uploads/store";
  * this app's own provider code, but they round-trip through `metadata_cache` as
  * plain JSON, so the host is checked again before anything is fetched.
  */
-const COVER_HOSTS = new Set(["images.igdb.com", "covers.openlibrary.org"]);
+const COVER_HOSTS = new Set(["images.igdb.com", "covers.openlibrary.org", "image.tmdb.org"]);
 
 const FETCH_TIMEOUT_MS = 15_000;
 
 /**
+ * Whether this URL is one `mirrorCover` would even try to fetch. Exported so
+ * scripts/backfill-covers.ts can tell "we could mirror this and haven't yet"
+ * apart from "no provider owns this URL", rather than inferring it from a null.
+ */
+export function isMirrorableCoverUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && COVER_HOSTS.has(parsed.hostname);
+}
+
+/**
  * Copies a provider's cover into local storage and returns the app-served URL,
  * or null to keep using the provider's own URL.
+ *
+ * A provider missing from COVER_HOSTS fails this check silently and the item
+ * keeps the provider's URL — it still renders, so the only way to notice is to
+ * look at what got stored. Adding a provider means adding its image host here.
  *
  * Worth the round trip because a hotlinked cover is slow in a way that reads as
  * broken: Open Library redirects `covers.openlibrary.org` to archive.org, which
@@ -26,13 +45,7 @@ const FETCH_TIMEOUT_MS = 15_000;
  * shouldn't cost the caller the metadata it just fetched.
  */
 export async function mirrorCover(url: string): Promise<string | null> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "https:" || !COVER_HOSTS.has(parsed.hostname)) return null;
+  if (!isMirrorableCoverUrl(url)) return null;
 
   try {
     const res = await fetch(url, {

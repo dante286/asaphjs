@@ -16,6 +16,7 @@ services:
       # credentials just show no lookup panel. Open Library needs none.
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:-}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:-}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
       METADATA_USER_AGENT: ${METADATA_USER_AGENT:-AsaphJS/0.1}
     volumes:
       - uploads:/app/uploads
