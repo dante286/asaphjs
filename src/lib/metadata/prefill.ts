@@ -26,6 +26,10 @@ const CANONICAL_BY_FIELD_ID: Record<string, keyof HydratedFields> = {
   franchise: "series",
   release_date: "releaseDate",
   released: "releaseDate",
+  // TV Shows labels this "First Aired" — TMDB's fact for a series is
+  // first_air_date, and a series doesn't have a release date.
+  first_aired: "releaseDate",
+  air_date: "releaseDate",
   year: "year",
   description: "summary",
   synopsis: "summary",

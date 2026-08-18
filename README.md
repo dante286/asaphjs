@@ -48,8 +48,8 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    equivalent flags. Postgres 18+ images expect their volume mounted at
    `/var/lib/postgresql`, not the older `/var/lib/postgresql/data`.)
 
-4. **Migrate + seed.** `db:migrate` creates the schema; `db:seed` inserts the 14 built-in
-   templates (13 collection types plus "Blank"):
+4. **Migrate + seed.** `db:migrate` creates the schema; `db:seed` inserts the 15 built-in
+   templates (14 collection types plus "Blank"):
 
    ```bash
    npm run db:migrate
@@ -62,7 +62,10 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    and leave you with no tables — check the database name in the URL first.
 
    Both commands work from any shell (bash, PowerShell, cmd) and are safe to rerun —
-   templates upsert by key rather than duplicating.
+   templates upsert by key rather than duplicating. Rerunning after a template's fields
+   change only affects collections created *afterwards*: `createCollection()` copies the
+   field defs onto the collection row, so an existing shelf keeps the columns it was made
+   with.
 
 5. **Demo data (optional).** Creates a demo account with three populated collections —
    Video Games (10 items), Books (9), and Manga (6):
@@ -101,7 +104,7 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema directly (no migration file — dev convenience) |
 | `npm run db:studio` | Drizzle Studio (browse the DB) |
-| `npm run db:seed` | Seed the 14 built-in templates (idempotent) |
+| `npm run db:seed` | Seed the 15 built-in templates (idempotent) |
 | `npm run db:seed -- --demo` | Same, plus the demo account and its three collections |
 | `npm run lookup:check` | Prove the metadata cache spares the provider's free tier (see below) |
 
@@ -112,7 +115,8 @@ per-field autosave (covers + table views, optimistic with conflict detection), C
 into new or existing collections (type-guessing, mapping, batch rollback), sharing
 (per-collection invites with viewer/editor roles, public read-only links), account settings
 (profile, password, sessions, CSV/JSON export), photo upload for item covers, and metadata
-lookups against IGDB (games), Open Library (books/comics/manga) and TMDB (movies/anime).
+lookups against IGDB (games), Open Library (books/comics/manga) and TMDB
+(movies/TV shows/anime).
 
 **Not implemented:** the MusicBrainz and Rebrickable providers — the interface and registry
 in `src/lib/metadata` take them as-is, they just need keys and a `search`/`hydrate` pair
@@ -124,8 +128,15 @@ The item detail page's Metadata panel searches the collection's provider, lists 
 candidates, and writes the picked one's fields into the item. Which provider a collection
 uses comes from `features.lookup`, falling back to a per-template default in
 `src/lib/metadata/lookup-config.ts` (`video_games` → IGDB, `books`/`comics`/`manga`/
-`strategy_guides` → Open Library, `movies`/`anime` → TMDB). A template with no default, or a
-provider whose keys are missing, renders no panel at all rather than a button that fails.
+`strategy_guides` → Open Library, `movies`/`tv_shows`/`anime` → TMDB). A template with no
+default, or a provider whose keys are missing, renders no panel at all rather than a button
+that fails.
+
+The three TMDB templates carry a Release Date (First Aired on TV Shows), Synopsis and Genre
+field precisely so a match has somewhere to put `releaseDate`, `summary` and `genre` —
+Comments is the owner's own notes (it maps to `items.notes`) and no lookup ever writes it.
+There's deliberately no Year column: the date already carries the year, and two fields
+holding one fact would both fill and then disagree the first time someone edited either.
 
 What lands where is deliberately conservative, because a wrong autofill is worse than a
 blank field:
@@ -158,14 +169,16 @@ blank field:
   has 56 across a dozen languages), so it only fills the field when the list is
   unambiguous. Subjects get filtered too — `nyt:graphic-books-and-manga=2021-04-11` and
   `form:manga` are machine tags, not genres.
-- **TMDB** covers both templates it's wired to off one `search/multi` call, because the
+- **TMDB** covers all three templates it's wired to off one `search/multi` call, because the
   Anime template holds films and series side by side — a source id is `movie:603` or
   `tv:1396` so a hydrate knows which endpoint to read. TV hits are labelled "TV" in the
   picker, which together with the year is what tells "cowboy bebop"'s three top hits apart —
   the 1998 series, the 2021 live-action one, and the 2001 film. Only movies group into
-  franchises (`belongs_to_collection`); TMDB has no TV equivalent, so a show's Series field
-  is left for the owner rather than filled with a guess. Episode- and season-level data is
-  out of scope here — that's what would argue for AniList/MAL later.
+  franchises (`belongs_to_collection`); TMDB has no TV equivalent, so Series stays blank on
+  TV Shows and on an anime *series*, while an anime *film* fills it — that asymmetry is
+  TMDB's, not a bug, and fills-blanks-only means a franchise you type yourself is never
+  clobbered. Episode- and season-level data is out of scope here (Seasons, Completed and
+  Watched are owner facts about the boxset) — that's what would argue for AniList/MAL later.
 - TMDB genres movies and TV against different vocabularies, so a Genre field can end up
   holding both dialects — Dune is "Science Fiction"/"Adventure", Cowboy Bebop is
   "Sci-Fi & Fantasy"/"Action & Adventure". They're TMDB's own labels, left as-is rather than

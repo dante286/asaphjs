@@ -24,6 +24,7 @@ const TEMPLATE_DEFAULT_PROVIDER: Record<string, ProviderKey> = {
   manga: "openlibrary",
   strategy_guides: "openlibrary",
   movies: "tmdb",
+  tv_shows: "tmdb",
   anime: "tmdb",
 };
 

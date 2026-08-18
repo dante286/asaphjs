@@ -3,9 +3,13 @@ import { db } from "@/db/client";
 import { templates } from "@/db/schema";
 import { slugifyFieldLabel, TEMPLATE_TYPE_LABELS, type FieldDef } from "@/lib/fields/field-def";
 
-// From the prototype's mock data (Archive.dc.html) — the 13 built-in collection
-// templates plus "Blank". Each entry is "Label:Type", Type being one of the
-// human-readable labels in TEMPLATE_TYPE_LABELS.
+// From the prototype's mock data (Archive.dc.html) — its 13 built-in collection
+// templates plus "Blank", and "TV Shows" added since. Each entry is "Label:Type",
+// Type being one of the human-readable labels in TEMPLATE_TYPE_LABELS.
+//
+// Editing a template only affects collections created after the next `db:seed`:
+// createCollection() copies these field defs onto the collection row, so an
+// existing shelf keeps whatever columns it was made with.
 const TEMPLATES: Record<string, string[]> = {
   "Video Games": [
     "Title:Text", "Console:Select", "Publisher:Text", "Series:Text", "Region:Select",
@@ -28,8 +32,28 @@ const TEMPLATES: Record<string, string[]> = {
     "Volumes:Text", "Completed:Checkbox", "Read:Checkbox", "Progress:Number",
     "Verified:Checkbox", "Borrower:Text", "Comments:Long text",
   ],
-  Movies: ["Title:Text", "Series:Text", "Genre:Tags", "Verified:Checkbox", "Borrower:Text", "Comments:Long text"],
-  Anime: ["Title:Text", "Series:Text", "Genre:Tags", "Verified:Checkbox", "Borrower:Text", "Comments:Long text"],
+  // Release Date and Synopsis exist so a TMDB match has somewhere to put
+  // `releaseDate` and `summary` — Comments is the owner's own notes (it maps to
+  // items.notes) and a lookup never writes it. No Year field: the date carries
+  // the year, and two columns holding the same fact both fill and then disagree
+  // the moment someone edits one.
+  Movies: [
+    "Title:Text", "Series:Text", "Genre:Tags", "Release Date:Date", "Synopsis:Long text",
+    "Verified:Checkbox", "Borrower:Text", "Comments:Long text",
+  ],
+  Anime: [
+    "Title:Text", "Series:Text", "Genre:Tags", "Release Date:Date", "Synopsis:Long text",
+    "Verified:Checkbox", "Borrower:Text", "Comments:Long text",
+  ],
+  // "First Aired" rather than "Release Date" because that's the fact TMDB has
+  // for a series (`first_air_date`) and what a shelf label says; prefill maps
+  // the id either way. Seasons/Completed/Watched mirror Manga's
+  // Volumes/Completed/Read — owner facts about the boxset, never provider-filled.
+  "TV Shows": [
+    "Title:Text", "Series:Text", "Genre:Tags", "First Aired:Date", "Synopsis:Long text",
+    "Seasons:Text", "Completed:Checkbox", "Watched:Checkbox", "Verified:Checkbox",
+    "Borrower:Text", "Comments:Long text",
+  ],
   Music: [
     "Album:Text", "Artist:Text", "Medium:Select", "Genre:Tags", "Soundtrack:Checkbox",
     "Borrower:Text", "Comments:Long text",
