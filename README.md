@@ -33,9 +33,9 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    without them those collections just show no metadata panel: `IGDB_CLIENT_ID`/
    `IGDB_CLIENT_SECRET` (register an app at
    [dev.twitch.tv/console](https://dev.twitch.tv/console)) for games, and `TMDB_API_KEY`
-   — a v4 **Read Access Token** from
-   [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api), not the legacy
-   v3 key — for movies and anime.
+   for movies and anime — either credential from
+   [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) works, the
+   32-char "API Key" or the longer "API Read Access Token".
 
 3. **Database.** Any Postgres 14+ works; Postgres 18 is the tested/recommended version.
    Easiest is the `db` service already defined in `docker-compose.yml`:
@@ -160,11 +160,21 @@ blank field:
   `form:manga` are machine tags, not genres.
 - **TMDB** covers both templates it's wired to off one `search/multi` call, because the
   Anime template holds films and series side by side — a source id is `movie:603` or
-  `tv:1396` so a hydrate knows which endpoint to read, and TV hits are labelled "TV" in the
-  picker to tell *Nausicaä* the film from a same-named series. Only movies group into
+  `tv:1396` so a hydrate knows which endpoint to read. TV hits are labelled "TV" in the
+  picker, which together with the year is what tells "cowboy bebop"'s three top hits apart —
+  the 1998 series, the 2021 live-action one, and the 2001 film. Only movies group into
   franchises (`belongs_to_collection`); TMDB has no TV equivalent, so a show's Series field
   is left for the owner rather than filled with a guess. Episode- and season-level data is
   out of scope here — that's what would argue for AniList/MAL later.
+- TMDB genres movies and TV against different vocabularies, so a Genre field can end up
+  holding both dialects — Dune is "Science Fiction"/"Adventure", Cowboy Bebop is
+  "Sci-Fi & Fantasy"/"Action & Adventure". They're TMDB's own labels, left as-is rather than
+  mapped onto a house list that would go stale.
+- TMDB issues two credentials for the same v3 API — a 32-char key that authenticates on an
+  `api_key` query param and a Read Access Token that goes in an `Authorization` header — and
+  the settings page shows them side by side. `TMDB_API_KEY` takes either and picks the
+  scheme by shape, because guessing wrong is an opaque 401. The key ends up in the URL on
+  the v3 path, so failures log the request *path*, never the built URL.
 
 ### Cover art is copied, not hotlinked
 

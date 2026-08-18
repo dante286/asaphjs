@@ -7,8 +7,43 @@ const IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
 // interactive lookup, but a limiter keeps a future backfill job well clear of it.
 const limiter = getLimiter("tmdb", 20, 1000);
 
+/**
+ * TMDB's API settings page hands out two credentials side by side and people
+ * copy whichever is nearer: a 32-char v3 API key, which authenticates on an
+ * `api_key` query param, and a v4 Read Access Token (a JWT), which goes in an
+ * Authorization header. Both reach these same v3 endpoints and return identical
+ * payloads, so accept either rather than 401 on a coin flip. Only the
+ * unambiguous legacy shape takes the query-param path — anything else is
+ * treated as a token, so a future token format lands on the header by default.
+ */
+const V3_API_KEY = /^[0-9a-f]{32}$/i;
+
+function credential(): string {
+  return (process.env.TMDB_API_KEY ?? "").trim();
+}
+
 export function isTmdbConfigured(): boolean {
-  return Boolean(process.env.TMDB_API_KEY);
+  return credential() !== "";
+}
+
+/**
+ * Note for callers: the v3 form puts the key in the query string, so `path` —
+ * never the returned `url` — is what belongs in an error message or a log line.
+ */
+function authorize(path: string): { url: string; headers: Record<string, string> } {
+  const key = credential();
+  if (!V3_API_KEY.test(key)) {
+    return {
+      url: `${BASE}${path}`,
+      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+    };
+  }
+
+  const separator = path.includes("?") ? "&" : "?";
+  return {
+    url: `${BASE}${path}${separator}api_key=${encodeURIComponent(key)}`,
+    headers: { Accept: "application/json" },
+  };
 }
 
 type TmdbMediaType = "movie" | "tv";
@@ -37,11 +72,12 @@ type TmdbDetail = {
 async function getJson<T>(path: string): Promise<T | null> {
   if (!isTmdbConfigured()) throw new Error("TMDB is not configured — set TMDB_API_KEY.");
 
+  const { url, headers } = authorize(path);
+
   return limiter.schedule(async () => {
-    const res = await fetch(`${BASE}${path}`, {
-      headers: { Authorization: `Bearer ${process.env.TMDB_API_KEY}`, Accept: "application/json" },
-    });
+    const res = await fetch(url, { headers });
     if (res.status === 404) return null;
+    // `path`, not `url` — the v3 form carries the key in the query string.
     if (!res.ok) throw new Error(`TMDB ${path} failed: ${res.status}`);
     return res.json() as Promise<T>;
   });
