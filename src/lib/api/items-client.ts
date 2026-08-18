@@ -41,13 +41,25 @@ export async function fetchItems(collectionId: string, query: ItemsQuery): Promi
   return res.json();
 }
 
-export async function createItemRequest(collectionId: string, title: string): Promise<Item> {
+/** What the create dialog collects — everything an item needs to land complete. */
+export type ItemDraft = {
+  title: string;
+  values?: Record<string, unknown>;
+  verified?: boolean;
+  borrower?: string | null;
+  notes?: string | null;
+  /** The provider candidate the draft was pre-filled from, if any. The server
+      re-reads its cover and provenance rather than trusting them from here. */
+  match?: { sourceId: string };
+};
+
+export async function createItemRequest(collectionId: string, draft: ItemDraft): Promise<Item> {
   const res = await fetch(`/api/collections/${collectionId}/items`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify(draft),
   });
-  if (!res.ok) throw new Error("Failed to create item.");
+  if (!res.ok) throw await errorFrom(res, "Failed to create item.");
   return res.json();
 }
 

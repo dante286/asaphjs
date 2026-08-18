@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition, type CSSProperties } from "react";
 import { Blueprint } from "@/components/ui/Blueprint";
+import { LookupCandidateList } from "@/components/collection/LookupCandidateList";
 import type { SaveStatus } from "@/components/collection/SaveStatusIndicator";
 import { applyLookupAction, clearLookupMatchAction, rerunLookupAction, type LookupApplyResult } from "@/actions/metadata";
 import { MIN_LOOKUP_QUERY_LENGTH, searchLookupRequest } from "@/lib/api/lookup-client";
@@ -212,49 +213,9 @@ export function MetadataLookupPanel({
             Overwrite fields that already have a value
           </label>
 
-          {candidates?.length === 0 && !searching && (
-            <div style={{ color: MUTED }}>No matches. Try a shorter or more exact title.</div>
+          {candidates && !searching && (
+            <LookupCandidateList candidates={candidates} actionLabel="Apply" disabled={busy} onPick={handleApply} />
           )}
-
-          {candidates?.map((candidate) => (
-            <div
-              key={candidate.sourceId}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "34px 1fr auto",
-                gap: 8,
-                alignItems: "center",
-                padding: "6px 0",
-                borderTop: "1px solid color-mix(in srgb, var(--color-text) 8%, transparent)",
-              }}
-            >
-              {candidate.coverUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={candidate.coverUrl}
-                  alt=""
-                  style={{ width: 34, height: 45, objectFit: "cover", background: "var(--color-neutral-200)" }}
-                />
-              ) : (
-                <div style={{ width: 34, height: 45, background: "var(--color-neutral-200)" }} />
-              )}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ lineHeight: 1.3 }}>{candidate.title}</div>
-                <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.35 }}>
-                  {[candidate.year, candidate.subtitle].filter(Boolean).join(" · ") || "—"}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ fontSize: 12 }}
-                disabled={busy}
-                onClick={() => handleApply(candidate)}
-              >
-                Apply
-              </button>
-            </div>
-          ))}
 
           <button
             type="button"
