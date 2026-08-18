@@ -76,17 +76,34 @@ export async function listItems(params: ListItemsParams) {
   return { rows, total: count, page, pageSize };
 }
 
-export async function createItem(params: {
+/**
+ * The whole row an item can be created with — the create dialog collects the
+ * fixed columns and the generic `values` up front, so a new item lands complete
+ * rather than as a bare title waiting to be opened and filled in.
+ */
+export type NewItem = {
   collectionId: string;
   title: string;
   values?: Record<string, unknown>;
-}) {
+  coverUrl?: string | null;
+  verified?: boolean;
+  borrower?: string | null;
+  notes?: string | null;
+  externalRef?: ExternalRef | null;
+};
+
+export async function createItem(params: NewItem) {
   const [row] = await db
     .insert(items)
     .values({
       collectionId: params.collectionId,
       title: params.title,
       values: params.values ?? {},
+      coverUrl: params.coverUrl ?? null,
+      verified: params.verified ?? false,
+      borrower: params.borrower ?? null,
+      notes: params.notes ?? null,
+      externalRef: params.externalRef ?? null,
     })
     .returning();
   return row;

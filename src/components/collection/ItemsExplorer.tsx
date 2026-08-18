@@ -9,6 +9,7 @@ import { SaveStatusIndicator, type SaveStatus } from "@/components/collection/Sa
 import { CoversView } from "@/components/collection/CoversView";
 import { TableView } from "@/components/collection/TableView";
 import { ColumnMenu } from "@/components/collection/ColumnMenu";
+import { CreateItemDialog } from "@/components/collection/CreateItemDialog";
 import {
   ConflictError,
   createItemRequest,
@@ -16,11 +17,13 @@ import {
   fetchItems,
   patchItemRequest,
   type Item,
+  type ItemDraft,
   type ItemsPage,
 } from "@/lib/api/items-client";
 import { fetchViewPrefs, saveViewPrefs, type ViewPrefs } from "@/lib/api/view-prefs-client";
 import { buildPatchForField } from "@/lib/fields/item-values";
 import type { FieldDef } from "@/lib/fields/field-def";
+import type { LookupConfig } from "@/lib/metadata/lookup-config";
 
 const DEBOUNCED_TYPES = new Set(["text", "longtext", "number", "url", "currency", "tags"]);
 const DEBOUNCE_MS = 400;
@@ -33,6 +36,7 @@ export function ItemsExplorer({
   defaultView,
   initialData,
   initialViewPrefs,
+  lookup,
 }: {
   collectionId: string;
   collectionSlug: string;
@@ -41,10 +45,13 @@ export function ItemsExplorer({
   defaultView: "covers" | "table";
   initialData: ItemsPage;
   initialViewPrefs: ViewPrefs;
+  /** Resolved server-side; null when this collection has no metadata provider. */
+  lookup: LookupConfig | null;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [view, setView] = useState<"covers" | "table">(defaultView);
+  const [createOpen, setCreateOpen] = useState(false);
   const [q, setQ] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [lentOnly, setLentOnly] = useState(false);
@@ -174,12 +181,14 @@ export function ItemsExplorer({
   });
 
   const createMutation = useMutation({
-    mutationFn: (title: string) => createItemRequest(collectionId, title),
+    mutationFn: (draft: ItemDraft) => createItemRequest(collectionId, draft),
+    // Straight to the top of the list rather than into its sorted position:
+    // the point of the dialog is that you never have to go hunting for what you
+    // just added.
     onSuccess: (item) => {
       queryClient.setQueryData<ItemsPage | undefined>(queryKey, (old) =>
         old ? { ...old, rows: [item, ...old.rows], total: old.total + 1 } : old,
       );
-      setView("table");
     },
   });
 
@@ -265,14 +274,7 @@ export function ItemsExplorer({
             Lent out
           </button>
           {canEdit && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => {
-                const title = window.prompt("Title for the new item?");
-                if (title?.trim()) createMutation.mutate(title.trim());
-              }}
-            >
+            <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M12 5v14"></path>
                 <path d="M5 12h14"></path>
@@ -311,6 +313,16 @@ export function ItemsExplorer({
           onResizeColumnEnd={handleResizeColumnEnd}
           onAutoFitColumn={handleAutoFitColumn}
           rowCountLabel={rowCountLabel}
+        />
+      )}
+
+      {canEdit && createOpen && (
+        <CreateItemDialog
+          onClose={() => setCreateOpen(false)}
+          onCreate={createMutation.mutateAsync}
+          collectionId={collectionId}
+          fields={fields}
+          lookup={lookup}
         />
       )}
     </div>

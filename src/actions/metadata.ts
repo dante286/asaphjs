@@ -21,9 +21,9 @@ export type LookupApplyResult = {
 /**
  * Server Actions are reachable by POST regardless of what the UI renders, so
  * every one of these re-checks the session, the caller's role on the collection,
- * and that the item really belongs to that collection.
+ * and — where an item is involved — that the item really belongs to it.
  */
-async function loadEditableItem(collectionId: string, itemId: string) {
+async function loadEditableCollection(collectionId: string) {
   const session = await requireSession();
   const role = await resolveRole(collectionId, session.user.id);
   if (role !== "owner" && role !== "editor") throw new Error("Not authorized.");
@@ -31,11 +31,17 @@ async function loadEditableItem(collectionId: string, itemId: string) {
   const collection = await getCollectionById(collectionId);
   if (!collection) throw new Error("Collection not found.");
 
-  const item = await getItem(itemId);
-  if (!item || item.collectionId !== collectionId) throw new Error("Item not found.");
-
   const lookup = resolveLookupConfig(collection);
   if (!lookup) throw new Error("This collection has no metadata provider configured.");
+
+  return { collection, lookup };
+}
+
+async function loadEditableItem(collectionId: string, itemId: string) {
+  const { collection, lookup } = await loadEditableCollection(collectionId);
+
+  const item = await getItem(itemId);
+  if (!item || item.collectionId !== collectionId) throw new Error("Item not found.");
 
   return { collection, item, lookup };
 }
@@ -129,4 +135,43 @@ export async function clearLookupMatchAction(input: {
   if (!result.ok) throw new Error("Item not found.");
 
   return toClientItem(result.item);
+}
+
+export type LookupDraftPreview = {
+  /** The provider's own title, for a draft that doesn't have one typed yet. */
+  title: string | null;
+  values: Record<string, unknown>;
+  /** The provider's URL — shown as a thumbnail only; the create route mirrors it. */
+  coverUrl: string | null;
+  /** Field labels the provider had data for, whether or not the draft uses them. */
+  filled: string[];
+};
+
+// What buildPrefillPlan measures "is this field already filled in?" against when
+// there is no row yet. The dialog does its own blank-only merge on top, so the
+// plan is computed against a clean slate here rather than the half-typed draft.
+const EMPTY_DRAFT = { title: "", verified: false, borrower: null, notes: null, values: {}, coverUrl: null };
+
+/**
+ * The hydrate half of a lookup for an item that doesn't exist yet — the create
+ * dialog puts these values in the form so they can be reviewed and edited before
+ * anything is written. Nothing is persisted and no cover is mirrored: a dialog
+ * that gets cancelled shouldn't leave bytes on disk. Saving re-reads the same
+ * (by then cached) hydrate payload from the items route.
+ */
+export async function previewLookupForDraftAction(input: {
+  collectionId: string;
+  sourceId: string;
+}): Promise<LookupDraftPreview> {
+  const { collection, lookup } = await loadEditableCollection(input.collectionId);
+
+  const hydrated = await getProvider(lookup.key).hydrate(input.sourceId);
+  const plan = buildPrefillPlan(collection.fields, EMPTY_DRAFT, hydrated);
+
+  return {
+    title: plan.patch.title ?? null,
+    values: plan.patch.values ?? {},
+    coverUrl: plan.patch.coverUrl ?? null,
+    filled: plan.applied,
+  };
 }

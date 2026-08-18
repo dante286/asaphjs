@@ -9,6 +9,7 @@ import { CollectionHeader } from "@/components/collection/CollectionHeader";
 import { StatTiles } from "@/components/collection/StatTiles";
 import { BreakdownPanel } from "@/components/collection/BreakdownPanel";
 import { ItemsExplorer } from "@/components/collection/ItemsExplorer";
+import { resolveLookupConfig } from "@/lib/metadata/lookup-config";
 
 export default async function CollectionDetailPage({
   params,
@@ -57,6 +58,9 @@ export default async function CollectionDetailPage({
         defaultView={(collection.defaultView as "covers" | "table") ?? "covers"}
         initialData={initialItemsSerialized}
         initialViewPrefs={initialViewPrefs}
+        // Resolved server-side: whether a provider is usable depends on env vars
+        // the client can't see.
+        lookup={resolveLookupConfig(collection)}
       />
     </div>
   );

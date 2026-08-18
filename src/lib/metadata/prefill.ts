@@ -37,7 +37,11 @@ const CANONICAL_BY_FIELD_ID: Record<string, keyof HydratedFields> = {
 // about the physical copy on the shelf.
 const UNFILLABLE_TYPES = new Set<FieldDef["type"]>(["checkbox", "currency", "rating", "image"]);
 
-function isEmpty(value: unknown): boolean {
+/**
+ * Blank for prefill purposes — what "fills in blank fields only" means, shared
+ * with the create dialog so its preview merge uses the same rule this does.
+ */
+export function isBlankValue(value: unknown): boolean {
   if (value === null || value === undefined) return true;
   if (typeof value === "string") return value.trim() === "";
   if (Array.isArray(value)) return value.length === 0;
@@ -118,7 +122,7 @@ export function buildPrefillPlan(
     if (isTitleField(index)) {
       const title = typeof hydrated.title === "string" ? hydrated.title.trim() : "";
       if (!title || title === item.title) return;
-      if (!overwrite && !isEmpty(item.title)) {
+      if (!overwrite && !isBlankValue(item.title)) {
         keptExisting.push(field.label);
         return;
       }
@@ -137,7 +141,7 @@ export function buildPrefillPlan(
     if (value === undefined) return;
 
     const current = getFieldValue(item, field, index);
-    if (!overwrite && !isEmpty(current)) {
+    if (!overwrite && !isBlankValue(current)) {
       keptExisting.push(field.label);
       return;
     }
@@ -150,7 +154,7 @@ export function buildPrefillPlan(
   if (Object.keys(values).length > 0) patch.values = values;
 
   if (typeof hydrated.coverUrl === "string" && hydrated.coverUrl !== item.coverUrl) {
-    if (overwrite || isEmpty(item.coverUrl)) {
+    if (overwrite || isBlankValue(item.coverUrl)) {
       patch.coverUrl = hydrated.coverUrl;
       applied.push("Cover");
     } else {
