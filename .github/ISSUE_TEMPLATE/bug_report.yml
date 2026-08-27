@@ -1,0 +1,119 @@
+name: Bug report
+description: Something behaves wrong, breaks, or stores the wrong data.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only the first three fields are required. Everything below them is worth
+        filling in when you have it and worth skipping when you don't.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: What went wrong, and what you expected instead.
+      placeholder: |
+        Applying a TMDB match to a TV Shows item filled Synopsis but left First Aired blank.
+        Expected the date to land, since the picker showed a year.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >
+        Numbered, from a state someone else can reach. Name the collection template
+        and the exact search query or item title — most bugs here depend on which
+        fields a collection has and what a provider returned for one specific title.
+      placeholder: |
+        1. Seed templates (`npm run db:seed`) and create a TV Shows collection
+        2. Add an item titled "Breaking Bad"
+        3. Open it, run the Metadata lookup, pick the 2008 series (`tv:1396`)
+        4. First Aired is still empty
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Best guess is fine.
+      options:
+        - Item grid / per-field autosave
+        - Collections, templates & custom fields
+        - Metadata lookups
+        - Cover art & photo uploads
+        - CSV import
+        - Sharing, invites & public links
+        - Auth & sessions
+        - Account settings & export
+        - Migrations & seeding
+        - Docker / first-time setup
+        - Something else / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Metadata provider
+      description: Only if the bug involves a lookup.
+      options:
+        - Not lookup-related
+        - IGDB (games)
+        - Open Library (books, comics, manga, guides)
+        - TMDB (movies, TV, anime)
+        - Affects more than one provider
+    validations:
+      required: false
+
+  - type: textarea
+    id: wrong-data
+    attributes:
+      label: Wrong or missing data
+      description: >
+        If a field filled with the wrong value, stayed blank when it shouldn't have,
+        or got overwritten — name the field, the value you got, and the value you
+        expected. Autofill here is meant to fill blanks only and never touch
+        Comments, so a violation of either is worth calling out explicitly.
+      placeholder: |
+        Field: First Aired (id `first_aired`)
+        Got: empty
+        Expected: 2008-01-20
+    validations:
+      required: false
+
+  - type: dropdown
+    id: how-running
+    attributes:
+      label: How you're running it
+      options:
+        - "npm run dev"
+        - "npm run build && npm run start"
+        - Docker Compose (app + db)
+        - Docker Compose db only, app on the host
+    validations:
+      required: false
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Node, Postgres, and browser if it's a UI bug. `node -v` and the `db` image tag from `docker-compose.yml` cover the first two.
+      placeholder: "Node 24.4.0, Postgres 18, Firefox 142"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console / server output
+      description: >
+        Browser console and terminal output, if either said anything. Scrub secrets —
+        note that failures on the TMDB v3 path deliberately log the request *path*
+        rather than the built URL, because the key rides in the query string.
+      render: text
+    validations:
+      required: false

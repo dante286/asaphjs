@@ -1,0 +1,92 @@
+name: Feature request
+description: A new capability, or a change to how an existing one works.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two required fields — the problem and the shape you have in mind. The rest
+        exist because they're the questions this project keeps having to answer
+        anyway; fill in what you already know.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's missing
+      description: >
+        The problem in terms of using the app, before any solution. What can't be
+        done today, or what's awkward about doing it.
+      placeholder: |
+        A Music collection shows no metadata panel, so every album's artist, year
+        and cover gets typed by hand — the one collection type where the catalogue
+        data is most uniform.
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: Proposed shape
+      description: >
+        How it should work, concretely enough to argue with. Where it lives in the
+        UI, what a user clicks, what gets stored.
+      placeholder: |
+        Register `musicbrainz` in the provider registry and default the Music
+        template to it. Search returns release groups (artist + year as the
+        disambiguator); hydrate fills artist, genre, release date and cover art
+        from the Cover Art Archive.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Item grid / per-field autosave
+        - Collections, templates & custom fields
+        - Metadata lookups (incl. new providers)
+        - Cover art & photo uploads
+        - CSV import
+        - Sharing, invites & public links
+        - Auth & sessions
+        - Account settings & export
+        - Deployment & setup
+        - Something else / cross-cutting
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: touches
+    attributes:
+      label: Does this touch any of these?
+      description: >
+        Check what you already know it needs. Each one has a known cost or a
+        migration path attached, and knowing up front changes how the work gets
+        sequenced. Not a commitment — leave them all unchecked if you're not sure.
+      options:
+        - label: A schema change (new table or column, so a Drizzle migration)
+        - label: A change to a built-in template's fields — which only reaches collections created after the next `db:seed`
+        - label: A new metadata provider, or new canonical keys out of an existing one
+        - label: A new API credential or env var
+        - label: Writing to a field that autofill currently leaves alone
+        - label: Anything served from `public/`, or stored outside `UPLOADS_DIR`
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Out of scope
+      description: >
+        What this deliberately shouldn't try to do. Worth stating — several things
+        here are unbuilt on purpose (episode-level TV data, a house genre
+        vocabulary, checkbox autofill) rather than merely unfinished.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other shapes you weighed, and why this one instead.
+    validations:
+      required: false
