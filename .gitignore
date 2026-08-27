@@ -47,3 +47,6 @@ next-env.d.ts
 
 # Webstorm IDE
 .idea/
+
+# Claude Code — per-machine permission grants; launch.json is shared
+.claude/settings.local.json
