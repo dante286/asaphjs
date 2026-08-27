@@ -1,5 +1,6 @@
 "use server";
 
+import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { fieldDefSchema } from "@/lib/fields/field-def";
@@ -28,6 +29,26 @@ const createCollectionSchema = z.object({
     })
     .optional(),
 });
+
+/**
+ * A Server Action is a public POST endpoint, so the patch is parsed rather than
+ * merely typed — `updateCollectionSettings` spreads it straight into a drizzle
+ * `.set()`, and the owner guard says who may write, not what.
+ */
+const collectionSettingsPatchSchema = z
+  .object({
+    name: z.string().trim().min(1, "Give the collection a name.").max(120),
+    defaultView: z.enum(["covers", "table"]),
+    features: z.object({
+      lending: z.boolean().optional(),
+      verified: z.boolean().optional(),
+      lookup: providerKeySchema.optional(),
+    }),
+    shareEnabled: z.boolean(),
+    shareToken: z.string().nullable(),
+    importMappings: z.record(z.string(), z.string()),
+  })
+  .partial();
 
 export async function createCollectionAction(input: z.infer<typeof createCollectionSchema>) {
   const session = await requireSession();
@@ -68,18 +89,27 @@ export async function updateFieldsAction(
 
 export async function updateCollectionSettingsAction(
   collectionId: string,
-  patch: Parameters<typeof updateCollectionSettingsQuery>[1],
+  patch: z.infer<typeof collectionSettingsPatchSchema>,
 ) {
   const session = await requireSession();
   await requireOwner(collectionId, session.user.id);
-  await updateCollectionSettingsQuery(collectionId, patch);
+  const row = await updateCollectionSettingsQuery(
+    collectionId,
+    collectionSettingsPatchSchema.parse(patch),
+  );
+  // Without this the action returns its value and the route is not re-rendered,
+  // so the page that called it would keep showing the old name.
+  refresh();
+  return { name: row.name, slug: row.slug };
 }
 
 export async function deleteCollectionAction(collectionId: string) {
   const session = await requireSession();
   await requireOwner(collectionId, session.user.id);
   await deleteCollectionQuery(collectionId);
-  redirect("/");
+  // Deleting happens from account settings, where the owner may have more
+  // collections to manage — so re-render in place rather than navigating away.
+  refresh();
 }
 
 export async function getCollectionOr404(collectionId: string) {

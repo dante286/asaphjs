@@ -115,9 +115,25 @@ Auth (email/password), collections with template/blank/CSV creation, custom fiel
 per-field autosave (covers + table views, optimistic with conflict detection), CSV import
 into new or existing collections (type-guessing, mapping, batch rollback), sharing
 (per-collection invites with viewer/editor roles, public read-only links), account settings
-(profile, password, sessions, CSV/JSON export), photo upload for item covers, and metadata
-lookups against IGDB (games), Open Library (books/comics/manga) and TMDB
-(movies/TV shows/anime).
+(profile, password, sessions, rename/delete per collection, CSV/JSON export), photo upload
+for item covers, and metadata lookups against IGDB (games), Open Library
+(books/comics/manga) and TMDB (movies/TV shows/anime).
+
+### Renaming moves a collection's URL
+
+A collection's slug is derived from its name, and renaming from account settings
+regenerates it — so "TV Shows" renamed to "Movies" moves from `/collections/tv-shows` to
+`/collections/movies`, and links to the old address 404. That's deliberate: the URL is
+worth keeping honest while the app is young and nobody has bookmarks worth breaking. If
+that ever costs something, the fix is a slug-alias (or slug-history) column that keeps
+resolving old addresses and redirects them to the current one — public share links are
+token-based (`/s/:token`), so they already survive a rename untouched.
+
+The regeneration lives in `updateCollectionSettings()` in `src/db/queries/collections.ts`
+rather than in the action, alongside the per-owner uniqueness loop that `createCollection`
+uses, so a future caller can't rename a collection and leave its URL pointing at the old
+name. That loop excludes the collection's own row when renaming — otherwise a collection
+renamed to the name it already has would collide with itself and creep to `movies-2`.
 
 **Not implemented:** the MusicBrainz and Rebrickable providers — the interface and registry
 in `src/lib/metadata` take them as-is, they just need keys and a `search`/`hydrate` pair

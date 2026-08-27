@@ -3,6 +3,7 @@ import { listCollectionsForUser } from "@/db/queries/collections";
 import { listMembers } from "@/db/queries/members";
 import { ProfileForm } from "@/components/account/ProfileForm";
 import { SecurityPanel } from "@/components/account/SecurityPanel";
+import { CollectionSettingsCard } from "@/components/account/CollectionSettingsCard";
 import { SharingCard } from "@/components/account/SharingCard";
 import { DataExportButtons } from "@/components/account/DataExportButtons";
 import { SignOutButton } from "@/components/account/SignOutButton";
@@ -39,6 +40,23 @@ export default async function AccountPage() {
 
       <h6 style={{ marginBottom: 10 }}>Security</h6>
       <SecurityPanel />
+
+      <h6 style={{ marginBottom: 10 }}>Collections</h6>
+      {owned.map((row) => (
+        <CollectionSettingsCard
+          key={row.collection.id}
+          collectionId={row.collection.id}
+          collectionName={row.collection.name}
+          collectionSlug={row.collection.slug}
+          itemCount={row.itemCount}
+          templateKey={row.collection.templateKey}
+        />
+      ))}
+      {owned.length === 0 && (
+        <p style={{ fontSize: 13, color: "color-mix(in srgb, var(--color-text) 60%, transparent)", marginBottom: 26 }}>
+          Nothing to manage yet — collections you own show up here to rename or delete.
+        </p>
+      )}
 
       <h6 style={{ marginBottom: 10 }}>Sharing</h6>
       {sharingCards.map(({ row, members }) => (
