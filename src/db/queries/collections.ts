@@ -43,16 +43,20 @@ export async function listCollectionsForUser(userId: string): Promise<Collection
   return rows.map((r) => ({ ...r, isOwner: r.collection.ownerId === userId }));
 }
 
+/**
+ * One query: the slug identifies the collection, then ownership or an accepted
+ * membership decides whether this user may have it. It used to look for one the
+ * user owned first and only then for a shared one, which meant a collection
+ * shared with you was unreachable whenever you owned one with the same slug —
+ * and the shared branch resolved arbitrarily among several. The unique index on
+ * `slug` is what makes both of those impossible: at most one row can match, so
+ * this is a lookup rather than a choice.
+ */
 export async function getCollectionForUser(userId: string, slug: string) {
-  const owned = await db.query.collections.findFirst({
-    where: and(eq(collections.ownerId, userId), eq(collections.slug, slug)),
-  });
-  if (owned) return owned;
-
-  const [shared] = await db
+  const [row] = await db
     .select({ collection: collections })
     .from(collections)
-    .innerJoin(
+    .leftJoin(
       collectionMembers,
       and(
         eq(collectionMembers.collectionId, collections.id),
@@ -60,10 +64,15 @@ export async function getCollectionForUser(userId: string, slug: string) {
         isNotNull(collectionMembers.acceptedAt),
       ),
     )
-    .where(eq(collections.slug, slug))
+    .where(
+      and(
+        eq(collections.slug, slug),
+        or(eq(collections.ownerId, userId), isNotNull(collectionMembers.acceptedAt)),
+      ),
+    )
     .limit(1);
 
-  return shared?.collection ?? null;
+  return row?.collection ?? null;
 }
 
 export async function listOwnedCollections(userId: string) {
@@ -94,27 +103,34 @@ function slugify(name: string): string {
 }
 
 /**
- * Slugs are unique per owner (`collections_owner_slug_unique`), so this walks
- * suffixes until it finds a free one. A small retry loop rather than a DB-level
- * upsert — collisions are rare (one owner naming two collections the same) and
- * this keeps the insert simple.
+ * Slugs are unique across the whole table (`collections_slug_unique`), so this
+ * walks suffixes until it finds a free one. A small retry loop rather than a
+ * DB-level upsert, which keeps the insert simple.
+ *
+ * Global rather than per-owner because `/collections/:slug` has no owner in it:
+ * the path is resolved against whoever is viewing. When two owners could both
+ * hold `movies`, `getCollectionForUser` answered with whichever one the viewer
+ * owned, leaving a collection shared with them unreachable at its own URL.
+ * Making the slug the unique thing moves that collision to where the app already
+ * knows how to handle it — here.
+ *
+ * The trade: the second person to name a collection "Movies" gets
+ * `/collections/movies-2`. Names like Movies and Books are exactly the ones two
+ * people both use, so this fires far more often than the per-owner version did.
+ * That's the price of a readable owner-free URL, and it's paid once at create or
+ * rename rather than by a viewer who can't reach a collection at all.
  *
  * `excludeId` is for renames: a collection collides with its own row otherwise,
  * so renaming "Movies" to "Movies" (or back to a name it held before) would
  * creep to `movies-2` for no reason.
  */
-async function uniqueSlugForOwner(
-  ownerId: string,
-  name: string,
-  excludeId?: string,
-): Promise<string> {
+async function uniqueSlug(name: string, excludeId?: string): Promise<string> {
   const base = slugify(name);
   let slug = base;
   let suffix = 1;
   for (;;) {
     const existing = await db.query.collections.findFirst({
       where: and(
-        eq(collections.ownerId, ownerId),
         eq(collections.slug, slug),
         ...(excludeId ? [ne(collections.id, excludeId)] : []),
       ),
@@ -134,7 +150,7 @@ export async function createCollection(params: {
   defaultView?: "covers" | "table";
   features?: CollectionFeatures;
 }) {
-  const slug = await uniqueSlugForOwner(params.ownerId, params.name);
+  const slug = await uniqueSlug(params.name);
 
   const [row] = await db
     .insert(collections)
@@ -176,11 +192,7 @@ export async function updateCollectionSettings(
   // no future caller can rename a collection and leave its URL behind. Renaming
   // therefore changes the URL: links to the old slug 404. Share links are
   // token-based (`/s/:token`), so they survive a rename either way.
-  let slug: string | undefined;
-  if (patch.name !== undefined) {
-    const current = await db.query.collections.findFirst({ where: eq(collections.id, id) });
-    if (current) slug = await uniqueSlugForOwner(current.ownerId, patch.name, id);
-  }
+  const slug = patch.name === undefined ? undefined : await uniqueSlug(patch.name, id);
 
   const [row] = await db
     .update(collections)

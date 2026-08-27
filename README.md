@@ -157,10 +157,35 @@ resolving old addresses and redirects them to the current one — public share l
 token-based (`/s/:token`), so they already survive a rename untouched.
 
 The regeneration lives in `updateCollectionSettings()` in `src/db/queries/collections.ts`
-rather than in the action, alongside the per-owner uniqueness loop that `createCollection`
-uses, so a future caller can't rename a collection and leave its URL pointing at the old
-name. That loop excludes the collection's own row when renaming — otherwise a collection
-renamed to the name it already has would collide with itself and creep to `movies-2`.
+rather than in the action, alongside the uniqueness loop that `createCollection` uses, so a
+future caller can't rename a collection and leave its URL pointing at the old name. That
+loop excludes the collection's own row when renaming — otherwise a collection renamed to
+the name it already has would collide with itself and creep to `movies-2`.
+
+### Slugs are unique across the table, not per owner
+
+`/collections/:slug` has no owner in it, so it's resolved against whoever is viewing. While
+slugs were unique only per owner, two people could each hold `movies`, and the lookup
+answered with whichever one the viewer owned — so a collection shared with you was
+unreachable at its own URL whenever you happened to own one by the same name, and the
+dashboard still linked to it. The unique index is on `slug` alone for that reason: at most
+one row can match a path, which turns `getCollectionForUser()` from a choice between
+candidates into a lookup.
+
+The trade is that the second person to name a collection "Movies" gets
+`/collections/movies-2`, and Movies and Books are exactly the names two people both use, so
+the suffix fires far more often than it used to. That's the cost of an owner-free readable
+URL, and it's paid once when a collection is created or renamed rather than by a viewer who
+can't reach a collection at all. The alternatives were owner-scoped paths
+(`/collections/:owner/:slug`, which changes every URL) or routing on the collection id
+(rename-proof, but opaque).
+
+Existing duplicates are resolved by `drizzle/migrations/0003_dedupe_collection_slugs.sql`,
+which runs before the constraint swap in `0004`: the oldest collection keeps the bare slug
+and the rest take the same `-2`/`-3` suffixes the app hands out, so a backfilled slug is
+indistinguishable from a minted one. **Whoever loses the bare slug has its URL changed by
+the migration** — same one-way trade as a rename, and unavoidable if the path is to
+identify one collection.
 
 **Not implemented:** the MusicBrainz and Rebrickable providers — the interface and registry
 in `src/lib/metadata` take them as-is, they just need keys and a `search`/`hydrate` pair
