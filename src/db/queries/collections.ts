@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { collections, collectionMembers, items, user } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
@@ -93,6 +93,39 @@ function slugify(name: string): string {
   );
 }
 
+/**
+ * Slugs are unique per owner (`collections_owner_slug_unique`), so this walks
+ * suffixes until it finds a free one. A small retry loop rather than a DB-level
+ * upsert — collisions are rare (one owner naming two collections the same) and
+ * this keeps the insert simple.
+ *
+ * `excludeId` is for renames: a collection collides with its own row otherwise,
+ * so renaming "Movies" to "Movies" (or back to a name it held before) would
+ * creep to `movies-2` for no reason.
+ */
+async function uniqueSlugForOwner(
+  ownerId: string,
+  name: string,
+  excludeId?: string,
+): Promise<string> {
+  const base = slugify(name);
+  let slug = base;
+  let suffix = 1;
+  for (;;) {
+    const existing = await db.query.collections.findFirst({
+      where: and(
+        eq(collections.ownerId, ownerId),
+        eq(collections.slug, slug),
+        ...(excludeId ? [ne(collections.id, excludeId)] : []),
+      ),
+    });
+    if (!existing) break;
+    suffix += 1;
+    slug = `${base}-${suffix}`;
+  }
+  return slug;
+}
+
 export async function createCollection(params: {
   ownerId: string;
   name: string;
@@ -101,19 +134,7 @@ export async function createCollection(params: {
   defaultView?: "covers" | "table";
   features?: CollectionFeatures;
 }) {
-  const base = slugify(params.name);
-  let slug = base;
-  let suffix = 1;
-  // Small retry loop rather than a DB-level upsert — collisions are rare
-  // (one owner naming two collections the same) and this keeps the insert simple.
-  for (;;) {
-    const existing = await db.query.collections.findFirst({
-      where: and(eq(collections.ownerId, params.ownerId), eq(collections.slug, slug)),
-    });
-    if (!existing) break;
-    suffix += 1;
-    slug = `${base}-${suffix}`;
-  }
+  const slug = await uniqueSlugForOwner(params.ownerId, params.name);
 
   const [row] = await db
     .insert(collections)
@@ -151,9 +172,19 @@ export async function updateCollectionSettings(
     importMappings: ImportMappings;
   }>,
 ) {
+  // The slug follows the name, and it does so here rather than in the action so
+  // no future caller can rename a collection and leave its URL behind. Renaming
+  // therefore changes the URL: links to the old slug 404. Share links are
+  // token-based (`/s/:token`), so they survive a rename either way.
+  let slug: string | undefined;
+  if (patch.name !== undefined) {
+    const current = await db.query.collections.findFirst({ where: eq(collections.id, id) });
+    if (current) slug = await uniqueSlugForOwner(current.ownerId, patch.name, id);
+  }
+
   const [row] = await db
     .update(collections)
-    .set({ ...patch, updatedAt: new Date() })
+    .set({ ...patch, ...(slug ? { slug } : {}), updatedAt: new Date() })
     .where(eq(collections.id, id))
     .returning();
   return row;
