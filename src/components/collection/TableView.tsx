@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { FieldDef } from "@/lib/fields/field-def";
 import { isTitleField } from "@/lib/fields/item-values";
 import { FieldCell } from "@/components/collection/FieldCell";
@@ -8,6 +8,20 @@ import type { Item } from "@/lib/api/items-client";
 
 const MIN_COLUMN_WIDTH = 72;
 const MOBILE_BREAKPOINT = 640;
+
+const TITLE_CELL: CSSProperties = {
+  display: "block",
+  fontFamily: "var(--font-heading)",
+  fontSize: 15,
+  padding: "4px 6px",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  width: "100%",
+  textAlign: "left",
+  background: "transparent",
+  color: "inherit",
+};
 
 export function defaultColumnWidth(index: number): number {
   return index === 0 ? 230 : 132;
@@ -48,12 +62,16 @@ export function TableView({
   canEdit: boolean;
   columnWidths: Record<string, number>;
   hiddenColumns: string[];
-  onFieldChange: (item: Item, field: FieldDef, index: number, value: unknown) => void;
-  onDelete: (item: Item) => void;
-  onOpenItem: (item: Item) => void;
-  onResizeColumn: (fieldId: string, width: number) => void;
-  onResizeColumnEnd: (fieldId: string, width: number) => void;
-  onAutoFitColumn: (fieldId: string) => void;
+  // Optional, because a read-only render has nowhere to send these: the public
+  // share page (`/s/:token`) is a Server Component, and a function prop can't
+  // cross into a Client Component. Omitting them is how a caller says read-only
+  // — no-op callbacks would satisfy the types and fail at serialization.
+  onFieldChange?: (item: Item, field: FieldDef, index: number, value: unknown) => void;
+  onDelete?: (item: Item) => void;
+  onOpenItem?: (item: Item) => void;
+  onResizeColumn?: (fieldId: string, width: number) => void;
+  onResizeColumnEnd?: (fieldId: string, width: number) => void;
+  onAutoFitColumn?: (fieldId: string) => void;
   rowCountLabel: string;
 }) {
   const isMobile = useIsMobile();
@@ -91,13 +109,15 @@ export function TableView({
                 }}
               >
                 {field.label}
-                <ResizeHandle
-                  active={columnWidths[field.id] !== undefined}
-                  onResize={(w) => onResizeColumn(field.id, w)}
-                  onResizeEnd={(w) => onResizeColumnEnd(field.id, w)}
-                  onAutoFit={() => onAutoFitColumn(field.id)}
-                  startWidth={width(field.id, index)}
-                />
+                {onResizeColumn && (
+                  <ResizeHandle
+                    active={columnWidths[field.id] !== undefined}
+                    onResize={(w) => onResizeColumn(field.id, w)}
+                    onResizeEnd={(w) => onResizeColumnEnd?.(field.id, w)}
+                    onAutoFit={() => onAutoFitColumn?.(field.id)}
+                    startWidth={width(field.id, index)}
+                  />
+                )}
               </th>
             ))}
             {canEdit && <th style={{ width: 70 }}></th>}
@@ -109,41 +129,33 @@ export function TableView({
               {columns.map(({ field, index }) => (
                 <td key={field.id} style={{ verticalAlign: "middle", overflow: "hidden" }}>
                   {isTitleField(index) ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenItem(item)}
-                      style={{
-                        display: "block",
-                        fontFamily: "var(--font-heading)",
-                        fontSize: 15,
-                        padding: "4px 6px",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        width: "100%",
-                        textAlign: "left",
-                        background: "transparent",
-                        border: 0,
-                        cursor: "pointer",
-                        color: "inherit",
-                      }}
-                    >
-                      {item.title}
-                    </button>
+                    // A button that opens nothing is a worse affordance than
+                    // plain text, so the read-only render drops it.
+                    onOpenItem ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenItem(item)}
+                        style={{ ...TITLE_CELL, border: 0, cursor: "pointer" }}
+                      >
+                        {item.title}
+                      </button>
+                    ) : (
+                      <span style={TITLE_CELL}>{item.title}</span>
+                    )
                   ) : (
                     <FieldCell
                       item={item}
                       field={field}
                       index={index}
                       disabled={!canEdit}
-                      onChange={(value) => onFieldChange(item, field, index, value)}
+                      onChange={(value) => onFieldChange?.(item, field, index, value)}
                     />
                   )}
                 </td>
               ))}
               {canEdit && (
                 <td>
-                  <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => onDelete(item)} type="button">
+                  <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => onDelete?.(item)} type="button">
                     Delete
                   </button>
                 </td>
@@ -162,8 +174,13 @@ export function TableView({
           color: "color-mix(in srgb, var(--color-text) 55%, transparent)",
         }}
       >
-        <span>Every edit saves on change. Drag a column edge to resize, double-click it to fit — layout is remembered per collection.</span>
-        <span>{rowCountLabel}</span>
+        {canEdit && (
+          <span>
+            Every edit saves on change. Drag a column edge to resize, double-click it to fit —
+            layout is remembered per collection.
+          </span>
+        )}
+        <span style={{ marginLeft: "auto" }}>{rowCountLabel}</span>
       </div>
     </div>
   );

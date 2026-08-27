@@ -36,6 +36,11 @@ export default async function PublicSharePage({ params }: { params: Promise<{ to
           are hidden on public links.
         </p>
 
+        {/*
+          No callback props: passing even a no-op function from here would be a
+          function crossing into a Client Component, which is what used to make
+          this page 500. Their absence is what puts both views in read-only mode.
+        */}
         {collection.defaultView === "table" ? (
           <TableView
             items={publicItems}
@@ -43,16 +48,10 @@ export default async function PublicSharePage({ params }: { params: Promise<{ to
             canEdit={false}
             columnWidths={{}}
             hiddenColumns={[]}
-            onFieldChange={() => {}}
-            onDelete={() => {}}
-            onOpenItem={() => {}}
-            onResizeColumn={() => {}}
-            onResizeColumnEnd={() => {}}
-            onAutoFitColumn={() => {}}
             rowCountLabel={`${rows.length} items`}
           />
         ) : (
-          <CoversView items={publicItems} fields={publicFields} onOpenItem={() => {}} />
+          <CoversView items={publicItems} fields={publicFields} />
         )}
       </div>
     </div>

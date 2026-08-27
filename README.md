@@ -150,6 +150,21 @@ lookups against IGDB (games), Open Library (books/comics/manga) and TMDB
 in `src/lib/metadata` take them as-is, they just need keys and a `search`/`hydrate` pair
 each.
 
+### A read-only view is a view with no handlers
+
+The public share page (`/s/:token`) is a Server Component, so it can't hand `CoversView` or
+`TableView` a callback — a function prop doesn't survive the trip into a Client Component,
+and satisfying the types with `onOpenItem={() => {}}` made the page 500 for every public
+link until it was fixed. So the views take their callbacks as **optional**, and their
+absence is what puts them in read-only mode: no click target, no resize handle, no
+edit-and-autosave hint, and a plain title instead of a button that opens nothing.
+
+`CoversView` has no `"use client"` and no hooks, so it takes its environment from whoever
+imports it: rendered from the share page it's a Server Component that ships no JS for the
+grid at all. `TableView` uses hooks and is a real client component, so there it hydrates
+with only serializable props. If you add a callback prop to either, make it optional too —
+a required one silently forces every caller to be a client component.
+
 ## Metadata lookups
 
 The item detail page's Metadata panel searches the collection's provider, lists the

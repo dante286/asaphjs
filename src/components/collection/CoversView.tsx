@@ -19,7 +19,13 @@ export function CoversView({
 }: {
   items: Item[];
   fields: FieldDef[];
-  onOpenItem: (item: Item) => void;
+  /**
+   * Optional so this renders read-only. There's no `"use client"` here — the
+   * component takes its environment from whoever imports it, and the public
+   * share page imports it from a Server Component, where an `onClick` on a host
+   * element can't be serialized. No handler, no click target.
+   */
+  onOpenItem?: (item: Item) => void;
 }) {
   const cardField = fields.find((f, i) => f.showOnCard && i !== 0);
 
@@ -31,7 +37,11 @@ export function CoversView({
         // Uploads have a grid-sized derivative; provider covers come back as-is.
         const cover = thumbUrlFor(item.coverUrl);
         return (
-          <div key={item.id} style={{ cursor: "pointer" }} onClick={() => onOpenItem(item)}>
+          <div
+            key={item.id}
+            style={onOpenItem ? { cursor: "pointer" } : undefined}
+            onClick={onOpenItem ? () => onOpenItem(item) : undefined}
+          >
             <Blueprint
               className="duotone"
               style={{
