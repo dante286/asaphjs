@@ -67,16 +67,43 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    field defs onto the collection row, so an existing shelf keeps the columns it was made
    with.
 
-5. **Demo data (optional).** Creates a demo account with three populated collections —
-   Video Games (10 items), Books (9), and Manga (6):
+5. **Demo data (optional).** Creates two demo accounts, four populated collections, and the
+   membership rows that make sharing testable without setting it up by hand:
 
    ```bash
    npm run db:seed -- --demo
    ```
 
-   Login with `demo@example.com` / `demopassword123`. This also runs the template seed from
-   step 4, so it's fine as your only seed command. Rerunning is safe: it skips the demo user
-   and any collection it already created, so edits you make to the demo data survive.
+   | Account | Password | Owns | Access to |
+   | --- | --- | --- | --- |
+   | `demo@example.com` | `demopassword123` | Video Games (10 items), Books (9), Manga (6) | — |
+   | `demo2@example.com` | `demopassword123` | Board Games (4) | editor on Video Games, viewer on Books |
+
+   Both memberships are pre-accepted, so signing in as `demo2` shows the shared collections
+   on the dashboard immediately. Two more invites are left unaccepted, at tokens fixed by the
+   seed so they survive a reseed and can be pasted straight in:
+
+   | URL | Is |
+   | --- | --- |
+   | `/invite/demo-invite-pending-manga` | A live invite for `demo2` to Manga. Opening it as `demo` instead hits the email-mismatch branch on the same token |
+   | `/invite/demo-invite-expired-board-games` | Backdated past the 14-day cutoff, addressed to `demo` |
+   | `/s/demo-share-books` | Books' public read-only link, already enabled — the collection with a borrower on it, which is what public links are supposed to withhold |
+
+   That last URL currently fails to render (issue #16, found by these fixtures): the page is
+   a Server Component handing no-op callbacks to the client views, which can't cross the RSC
+   boundary. The data half is fine — `/api/collections/<books-id>/items?token=demo-share-books`
+   returns the rows with borrower and notes stripped — so the token is right and the fixture
+   stays useful for verifying the fix.
+
+   Two accounts is also the only way to reach the concurrent-edit path: `patchItem` compares
+   the client's `updatedAt` and the API answers 409, which `ConflictError` in
+   `src/lib/api/items-client.ts` turns into the autosave conflict UI. Sign in as each account
+   in two windows and edit the same Video Games item.
+
+   This also runs the template seed from step 4, so it's fine as your only seed command.
+   Rerunning is safe: it skips users, collections and memberships that already exist, so
+   edits you make to the demo data survive — including an invite you accepted or a share
+   link you rotated or switched off.
 
 6. **Run:**
 
@@ -105,7 +132,7 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | `npm run db:push` | Push schema directly (no migration file — dev convenience) |
 | `npm run db:studio` | Drizzle Studio (browse the DB) |
 | `npm run db:seed` | Seed the 15 built-in templates (idempotent) |
-| `npm run db:seed -- --demo` | Same, plus the demo account and its three collections |
+| `npm run db:seed -- --demo` | Same, plus the two demo accounts, their collections, and the sharing fixtures |
 | `npm run lookup:check` | Prove the metadata cache spares the provider's free tier (see below) |
 | `npm run covers:backfill` | Mirror already-matched items' provider covers (dry run; `-- --apply` writes) |
 
