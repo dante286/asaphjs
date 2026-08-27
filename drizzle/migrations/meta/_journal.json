@@ -22,6 +22,20 @@
       "when": 1785957042575,
       "tag": "0002_cuddly_lockheed",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787869430759,
+      "tag": "0003_dedupe_collection_slugs",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787869447132,
+      "tag": "0004_yielding_killraven",
+      "breakpoints": true
     }
   ]
 }

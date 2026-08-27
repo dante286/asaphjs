@@ -34,7 +34,10 @@ export const collections = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    unique("collections_owner_slug_unique").on(table.ownerId, table.slug),
+    // Global, not per-owner. `/collections/:slug` is resolved against the viewer,
+    // not against an owner, so two owners holding the same slug left one of the
+    // two unreachable: the lookup answered with whichever the viewer owned.
+    unique("collections_slug_unique").on(table.slug),
     check("collections_default_view_check", sql`${table.defaultView} in ('covers','table')`),
   ],
 );
