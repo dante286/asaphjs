@@ -21,25 +21,28 @@ export function SharingCard({
   collectionName,
   itemCount,
   shareEnabled: initialShareEnabled,
-  shareToken: initialShareToken,
+  shareUrl,
   members: initialMembers,
 }: {
   collectionId: string;
   collectionName: string;
   itemCount: number;
   shareEnabled: boolean;
-  shareToken: string | null;
+  /**
+   * Built on the server from the request's own origin. Not held in state: when
+   * enabling the link mints a token, the action re-renders the page and the URL
+   * arrives as a new prop — state initialised once would have kept showing the
+   * token that didn't exist yet.
+   */
+  shareUrl: string | null;
   members: MemberRow[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [shareEnabled, setShareEnabled] = useState(initialShareEnabled);
-  const [shareToken] = useState(initialShareToken);
   const [members, setMembers] = useState(initialMembers);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"viewer" | "editor">("viewer");
   const [copied, setCopied] = useState(false);
-
-  const shareUrl = shareToken && typeof window !== "undefined" ? `${window.location.origin}/s/${shareToken}` : "";
 
   function togglePublic() {
     const next = !shareEnabled;

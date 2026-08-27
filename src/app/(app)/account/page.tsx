@@ -1,4 +1,5 @@
 import { requireSession, getSession } from "@/lib/auth/session";
+import { requestOrigin } from "@/lib/request-origin";
 import { listCollectionsForUser } from "@/db/queries/collections";
 import { listMembers } from "@/db/queries/members";
 import { ProfileForm } from "@/components/account/ProfileForm";
@@ -16,6 +17,7 @@ export default async function AccountPage() {
     currency?: string;
   };
 
+  const origin = await requestOrigin();
   const collectionRows = await listCollectionsForUser(session.user.id);
   const owned = collectionRows.filter((r) => r.isOwner);
 
@@ -66,7 +68,7 @@ export default async function AccountPage() {
           collectionName={row.collection.name}
           itemCount={row.itemCount}
           shareEnabled={row.collection.shareEnabled}
-          shareToken={row.collection.shareToken}
+          shareUrl={row.collection.shareToken ? `${origin}/s/${row.collection.shareToken}` : null}
           members={members.map((m) => ({
             invitedEmail: m.invitedEmail,
             role: m.role,
