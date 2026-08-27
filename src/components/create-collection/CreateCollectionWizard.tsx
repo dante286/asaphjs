@@ -33,6 +33,9 @@ export function CreateCollectionWizard({ templates }: { templates: TemplateOptio
 
   const [templateKey, setTemplateKey] = useState<string | null>(null);
   const [name, setName] = useState("");
+  // The name field follows whatever template or CSV is selected until someone
+  // types their own, and starts following again if they clear it back to empty.
+  const [nameEdited, setNameEdited] = useState(false);
   const [fields, setFields] = useState<FieldDef[]>([]);
   const [draftFieldName, setDraftFieldName] = useState("");
   const [draftFieldType, setDraftFieldType] = useState<FieldType>("text");
@@ -45,14 +48,14 @@ export function CreateCollectionWizard({ templates }: { templates: TemplateOptio
   function pickTemplate(t: TemplateOption) {
     setTemplateKey(t.key);
     setCsv(null);
-    setName((prev) => prev || t.name);
+    if (!nameEdited) setName(t.name);
     setFields(t.fields.map((f) => ({ ...f })));
   }
 
   function handleCsvParsed(parsed: ParsedCsv, fileName: string) {
     setTemplateKey(null);
     setCsv(parsed);
-    setName((prev) => prev || fileName.replace(/\.csv$/i, ""));
+    if (!nameEdited) setName(fileName.replace(/\.csv$/i, ""));
     setFields(guessFieldsFromRows(parsed.headers, parsed.rows));
   }
 
@@ -173,7 +176,16 @@ export function CreateCollectionWizard({ templates }: { templates: TemplateOptio
         <Blueprint style={{ padding: "16px 18px" }}>
           <div className="field" style={{ marginBottom: 14 }}>
             <label>Collection name</label>
-            <input className="input" type="text" value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              className="input"
+              type="text"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                // Whitespace alone isn't a name worth keeping — submit() trims too.
+                setNameEdited(e.target.value.trim() !== "");
+              }}
+            />
           </div>
           <div style={{ display: "grid", gap: 1, borderTop: "1px solid var(--color-divider)" }}>
             {fields.map((f, index) => (
