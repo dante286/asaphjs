@@ -89,12 +89,6 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    | `/invite/demo-invite-expired-board-games` | Backdated past the 14-day cutoff, addressed to `demo` |
    | `/s/demo-share-books` | Books' public read-only link, already enabled — the collection with a borrower on it, which is what public links are supposed to withhold |
 
-   That last URL currently fails to render (issue #16, found by these fixtures): the page is
-   a Server Component handing no-op callbacks to the client views, which can't cross the RSC
-   boundary. The data half is fine — `/api/collections/<books-id>/items?token=demo-share-books`
-   returns the rows with borrower and notes stripped — so the token is right and the fixture
-   stays useful for verifying the fix.
-
    Two accounts is also the only way to reach the concurrent-edit path: `patchItem` compares
    the client's `updatedAt` and the API answers 409, which `ConflictError` in
    `src/lib/api/items-client.ts` turns into the autosave conflict UI. Sign in as each account
