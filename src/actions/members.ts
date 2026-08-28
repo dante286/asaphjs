@@ -1,6 +1,7 @@
 "use server";
 
 import { nanoid } from "nanoid";
+import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { resolveRole } from "@/db/queries/members";
@@ -63,12 +64,18 @@ export async function togglePublicLinkAction(collectionId: string, enabled: bool
   const shareToken = enabled ? collection?.shareToken ?? nanoid(24) : collection?.shareToken ?? null;
 
   await updateCollectionSettings(collectionId, { shareEnabled: enabled, shareToken });
+  // Enabling mints the token server-side, and the page builds the URL from it —
+  // without a re-render the owner sees a switched-on link and no address until
+  // they reload.
+  refresh();
 }
 
 export async function rotateShareTokenAction(collectionId: string) {
   const session = await requireSession();
   await requireOwner(collectionId, session.user.id);
   await updateCollectionSettings(collectionId, { shareToken: nanoid(24) });
+  // Same reason: a rotated token is a new URL the page has to be told about.
+  refresh();
 }
 
 export async function acceptInviteAction(token: string) {
