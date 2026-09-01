@@ -213,3 +213,32 @@ export async function deleteCollection(id: string) {
   await db.delete(collections).where(eq(collections.id, id));
   await deleteUploads(covers.map((row) => row.coverUrl));
 }
+
+/**
+ * Every managed cover file behind a user's own collections, unlinked without
+ * touching a row. `user.id` is the root of a cascade chain — collections go by
+ * `collections.owner_id on delete cascade`, and items go with the collections —
+ * so by the time the app could notice, the rows that named these files are gone
+ * and `UPLOADS_DIR` is holding WebP originals and `_t` thumbnails nothing can
+ * ever reach again. Reading the list first is the same read-before-delete
+ * ordering `deleteCollection` uses, one level further up the chain.
+ *
+ * The join to `collections` is the point, not a detail: it keeps the sweep to
+ * covers under collections this user *owns*. Someone with an editor membership
+ * can upload a photo to a collection belonging to somebody else, and that item
+ * survives the deletion — unlinking its file would blank a cover in a collection
+ * whose owner never asked for anything.
+ *
+ * Called from `user.deleteUser.beforeDelete` rather than from the delete itself,
+ * since Better Auth owns the row removal. It's here beside the other sweeps for
+ * the reason recorded on `deleteItem`: a caller shouldn't be able to forget it.
+ */
+export async function deleteUploadsForOwner(userId: string): Promise<number> {
+  const covers = await db
+    .select({ coverUrl: items.coverUrl })
+    .from(items)
+    .innerJoin(collections, eq(collections.id, items.collectionId))
+    .where(eq(collections.ownerId, userId));
+
+  return deleteUploads(covers.map((row) => row.coverUrl));
+}

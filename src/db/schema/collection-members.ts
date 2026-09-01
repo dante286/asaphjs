@@ -22,7 +22,17 @@ export const collectionMembers = pgTable(
     invitedEmail: text("invited_email").notNull(),
     role: text("role").notNull().default("viewer"),
     inviteToken: text("invite_token").unique(),
-    invitedBy: text("invited_by").references(() => user.id),
+    // `set null`, not the default `no action`: without an action here, an owner
+    // who has ever sent an invite cannot delete their account at all. Deleting a
+    // `user` row cascades to `collections` and on to these rows, but Postgres
+    // fires both referential triggers as after-row triggers on the same
+    // statement, in constraint-name order — `collection_members_invited_by_…`
+    // sorts before `collections_owner_id_…`, so the check ran while the rows it
+    // was checking were still there and raised 23503. `cascade` would also clear
+    // the block, but it would be a promise this column can't keep: it would take
+    // the membership with the inviter, and who invited whom is provenance while
+    // the membership is the fact. Nullable already, so nothing else changes.
+    invitedBy: text("invited_by").references(() => user.id, { onDelete: "set null" }),
     invitedAt: timestamp("invited_at", { withTimezone: true }).defaultNow(),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   },
