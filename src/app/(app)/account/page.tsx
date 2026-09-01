@@ -41,7 +41,12 @@ export default async function AccountPage() {
       />
 
       <h6 style={{ marginBottom: 10 }}>Security</h6>
-      <SecurityPanel />
+      {/* Counts are the owned ones only: collections shared *with* you survive
+          your account, so naming them in a delete confirmation would overstate it. */}
+      <SecurityPanel
+        collectionCount={owned.length}
+        itemCount={owned.reduce((sum, row) => sum + row.itemCount, 0)}
+      />
 
       <h6 style={{ marginBottom: 10 }}>Collections</h6>
       {owned.map((row) => (

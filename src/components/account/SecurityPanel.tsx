@@ -1,15 +1,32 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Blueprint } from "@/components/ui/Blueprint";
-import { changePasswordAction, signOutEverywhereAction, type ActionState } from "@/actions/account";
+import { Dialog } from "@/components/ui/Dialog";
+import {
+  changePasswordAction,
+  deleteAccountAction,
+  signOutEverywhereAction,
+  type ActionState,
+} from "@/actions/account";
 
-export function SecurityPanel() {
+export function SecurityPanel({
+  collectionCount,
+  itemCount,
+}: {
+  collectionCount: number;
+  itemCount: number;
+}) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     changePasswordAction,
     undefined,
   );
   const [isSigningOut, startTransition] = useTransition();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteState, deleteFormAction, deleting] = useActionState<ActionState, FormData>(
+    deleteAccountAction,
+    undefined,
+  );
 
   return (
     <Blueprint style={{ padding: 18, display: "grid", gap: 14, marginBottom: 26 }}>
@@ -43,6 +60,95 @@ export function SecurityPanel() {
           {isSigningOut ? "Signing out…" : "Sign out everywhere"}
         </button>
       </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          fontSize: 12.5,
+          borderTop: "1px solid var(--color-divider)",
+          paddingTop: 12,
+        }}
+      >
+        <span style={{ color: "color-mix(in srgb, var(--color-text) 60%, transparent)" }}>
+          Deleting your account removes your collections, their items and photos, and everyone
+          else&apos;s access to them.
+        </span>
+        <button
+          className="btn btn-ghost"
+          style={{ fontSize: 12, color: "#b5544a" }}
+          type="button"
+          onClick={() => setConfirmOpen(true)}
+        >
+          Delete account
+        </button>
+      </div>
+
+      {confirmOpen && (
+        <Dialog
+          open
+          onClose={() => {
+            if (!deleting) setConfirmOpen(false);
+          }}
+          title="Delete your account?"
+          actions={
+            <>
+              <button
+                className="btn btn-ghost"
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              {/* Submits the form in the body — the dialog puts its actions in a
+                  sibling of the body, and `form=` is what reaches across that. */}
+              <button className="btn btn-primary" type="submit" form="delete-account" disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete forever"}
+              </button>
+            </>
+          }
+        >
+          <form id="delete-account" action={deleteFormAction} style={{ display: "grid", gap: 12 }}>
+            <p style={{ margin: 0 }}>
+              This removes {collectionCount} collection{collectionCount === 1 ? "" : "s"},{" "}
+              {itemCount} item{itemCount === 1 ? "" : "s"} and every photo uploaded to them, plus
+              your sign-in and everyone else&apos;s access to what you shared. It can&apos;t be
+              undone.
+            </p>
+            <p style={{ margin: 0, fontSize: 12.5, color: "color-mix(in srgb, var(--color-text) 60%, transparent)" }}>
+              Want a copy first? Export{" "}
+              <a href="/api/account/export/csv" style={{ color: "var(--color-accent-700)" }}>
+                CSV
+              </a>{" "}
+              or{" "}
+              <a href="/api/account/export/json" style={{ color: "var(--color-accent-700)" }}>
+                JSON
+              </a>{" "}
+              — the download leaves this dialog open.
+            </p>
+            <div className="field" style={{ gap: 4 }}>
+              <label htmlFor="delete-account-password">Enter your password to confirm</label>
+              <input
+                id="delete-account-password"
+                className="input"
+                type="password"
+                name="password"
+                autoComplete="current-password"
+                placeholder="••••••••••"
+                required
+                autoFocus
+                disabled={deleting}
+              />
+            </div>
+            {deleteState?.error && (
+              <span style={{ fontSize: 12, color: "#b5544a" }}>{deleteState.error}</span>
+            )}
+          </form>
+        </Dialog>
+      )}
     </Blueprint>
   );
 }

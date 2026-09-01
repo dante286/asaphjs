@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
 import { auth } from "@/lib/auth/auth";
 import { requireSession } from "@/lib/auth/session";
@@ -49,6 +50,42 @@ export async function changePasswordAction(
     return { error: "Couldn't change your password." };
   }
   return { ok: true };
+}
+
+/**
+ * The password is the confirmation gate, and it's `auth.api.deleteUser`'s own:
+ * without one the endpoint insists the session be fresher than `freshAge` (a day
+ * by default), so a signed-in-since-last-week person would get
+ * `SESSION_EXPIRED` from a button that looked ready. Asking for it every time
+ * makes the gate the same one every time, and it's a better gate than typing a
+ * word — a borrowed laptop with a live session can't get past it.
+ *
+ * The upload sweep hangs off `user.deleteUser.beforeDelete` in
+ * `src/lib/auth/auth.ts`, not this action, so `/api/auth/delete-user` sweeps too
+ * — the same reasoning as `disableSignUp` covering both sign-up entry points.
+ */
+export async function deleteAccountAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession();
+  const password = String(formData.get("password") ?? "");
+
+  try {
+    await auth.api.deleteUser({
+      headers: await headers(),
+      body: { password },
+    });
+  } catch (err) {
+    if (err instanceof APIError) return { error: err.message };
+    return { error: "Couldn't delete your account." };
+  }
+
+  // Outside the catch: `redirect` works by throwing. The session cookie is
+  // already cleared by the endpoint (the `nextCookies` plugin lets it write one
+  // from a Server Action), so this lands on the sign-in form rather than
+  // bouncing through `requireSession`.
+  redirect("/auth");
 }
 
 export async function signOutEverywhereAction() {

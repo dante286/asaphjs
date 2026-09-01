@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/client";
+import { deleteUploadsForOwner } from "@/db/queries/collections";
 import { signupsAllowed } from "./signups";
 
 export const auth = betterAuth({
@@ -31,6 +32,25 @@ export const auth = betterAuth({
         required: false,
         defaultValue: "USD",
         input: true,
+      },
+    },
+    deleteUser: {
+      enabled: true,
+      // `beforeDelete` runs while the user's collections and items are still
+      // there, which is the only moment their cover URLs can be read at all:
+      // `collections.owner_id` cascades from `user`, items cascade from
+      // collections, and Postgres does that in one statement the app never sees
+      // row by row. `afterDelete` would fire with the rows already gone and no
+      // record of which files they named, leaving the uploads orphaned in the
+      // volume permanently — the exact hazard `deleteCollection` exists to avoid.
+      //
+      // Nothing here catches: a covers list we couldn't read is a sweep we can't
+      // perform, and refusing the deletion (a 500 the person can retry) beats
+      // silently stranding their photos on disk forever. The unlinks themselves
+      // are best-effort inside `deleteUploads`, so a file already missing — or a
+      // read-only mount — doesn't block anyone from leaving.
+      beforeDelete: async (deleted) => {
+        await deleteUploadsForOwner(deleted.id);
       },
     },
   },
