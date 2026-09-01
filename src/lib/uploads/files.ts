@@ -31,12 +31,27 @@ const MIME_BY_EXT: Record<string, string> = {
 };
 
 export function uploadsDir(): string {
-  return process.env.UPLOADS_DIR ?? path.join(process.cwd(), "uploads");
+  return process.env.UPLOADS_DIR ?? path.join(/*turbopackIgnore: true*/ process.cwd(), "uploads");
+}
+
+/**
+ * Joins a stored name onto the uploads directory.
+ *
+ * The `turbopackIgnore` comments on this and every `fs` call below are what keep
+ * the standalone output honest. `UPLOADS_DIR` points at a mounted volume, so
+ * these paths only exist at runtime and the build's tracer cannot statically
+ * scope them; left alone it assumes the worst and traces the entire project into
+ * `.next/standalone` — `src/`, `README.md`, `scripts/`, `tsconfig.tsbuildinfo`
+ * and the developer's own local `uploads/` ride along into the deploy image.
+ * Nothing under this path is part of the build, so there is nothing to trace.
+ */
+export function uploadPath(name: string): string {
+  return path.join(/*turbopackIgnore: true*/ uploadsDir(), name);
 }
 
 /** Best-effort by design: a missing file is the state we wanted anyway. */
 export function removeUploadFile(name: string): Promise<void> {
-  return unlink(path.join(uploadsDir(), name)).catch(() => {});
+  return unlink(/*turbopackIgnore: true*/ uploadPath(name)).catch(() => {});
 }
 
 /** Removes the full-size file and its thumbnail together. */
@@ -63,16 +78,15 @@ export async function readUpload(
 ): Promise<{ bytes: Uint8Array<ArrayBuffer>; mime: string } | null> {
   if (!NAME_PATTERN.test(name)) return null;
 
-  const dir = uploadsDir();
   let bytes: Buffer;
   try {
-    bytes = await readFile(path.join(dir, name));
+    bytes = await readFile(/*turbopackIgnore: true*/ uploadPath(name));
   } catch {
     // Uploads written before thumbnails existed have no `_t` file. Serving the
     // full-size image beats a broken tile, and it self-corrects on re-upload.
     if (!isThumbName(name)) return null;
     try {
-      bytes = await readFile(path.join(dir, fullNameForThumb(name)));
+      bytes = await readFile(/*turbopackIgnore: true*/ uploadPath(fullNameForThumb(name)));
     } catch {
       return null;
     }

@@ -435,7 +435,7 @@ lives in `src/db/queries/*` rather than in the routes, so a future caller of `de
 can't forget it, and in `src/lib/uploads/files.ts` rather than `store.ts` so unlinking a
 file doesn't drag sharp into that route's standalone trace.
 
-Three things worth knowing about that path:
+Four things worth knowing about that path:
 
 - Uploads are **not** under `public/`. Next indexes the public folder once at server
   start in production, so anything written afterwards 404s until a restart. They're
@@ -444,6 +444,13 @@ Three things worth knowing about that path:
   render covers with plain `<img>` and carry no session. The random filename is the
   capability, so anyone holding the URL can fetch the photo. Fine for shelf pictures;
   swap in signed URLs before storing anything sensitive.
+- Reads and writes against that directory are marked `/*turbopackIgnore: true*/`.
+  `UPLOADS_DIR` points at a mounted volume, so the paths only exist at runtime and the
+  build tracer can't statically scope them. Left alone it assumes the worst and traces the
+  whole project into `.next/standalone` — `src/`, `README.md`, `scripts/`, `drizzle/`, and
+  the developer's own local `uploads/` all ride along into the deploy image. The annotation
+  is what makes the Dockerfile's claim of tracing "only the files next start actually
+  needs" true.
 - sharp ships prebuilt platform binaries, so the Docker image needs the `linuxmusl`
   ones from `package-lock.json` — regenerate the lockfile with `npm install`, never by
   hand-editing, or `npm ci` inside `node:24-alpine` won't find them.

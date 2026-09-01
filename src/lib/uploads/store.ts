@@ -1,9 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { nanoid } from "nanoid";
 import sharp from "sharp";
 import { UPLOAD_URL_PREFIX, thumbNameFor } from "@/lib/uploads/urls";
-import { removeUploadFile, uploadsDir } from "@/lib/uploads/files";
+import { removeUploadFile, uploadPath, uploadsDir } from "@/lib/uploads/files";
 
 /**
  * The detail page renders the cover in a ~330px frame, so this is already
@@ -96,8 +95,8 @@ export async function saveUpload(bytes: Uint8Array): Promise<string | null> {
 
   try {
     await Promise.all([
-      writeFile(path.join(dir, name), full),
-      writeFile(path.join(dir, thumbNameFor(name)), thumb),
+      writeFile(/*turbopackIgnore: true*/ uploadPath(name), full),
+      writeFile(/*turbopackIgnore: true*/ uploadPath(thumbNameFor(name)), thumb),
     ]);
   } catch {
     // Don't leave half a pair behind for a URL we're about to not return.
