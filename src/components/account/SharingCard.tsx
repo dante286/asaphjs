@@ -2,9 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { Blueprint } from "@/components/ui/Blueprint";
+import { Dialog } from "@/components/ui/Dialog";
 import {
   inviteMemberAction,
   removeMemberAction,
+  rotateShareTokenAction,
   togglePublicLinkAction,
   updateMemberRoleAction,
 } from "@/actions/members";
@@ -29,10 +31,11 @@ export function SharingCard({
   itemCount: number;
   shareEnabled: boolean;
   /**
-   * Built on the server from the request's own origin. Not held in state: when
-   * enabling the link mints a token, the action re-renders the page and the URL
-   * arrives as a new prop — state initialised once would have kept showing the
-   * token that didn't exist yet.
+   * Built on the server from the request's own origin. Not held in state: both
+   * enabling the link (which mints a token) and rotating it change the token
+   * server-side, and the action re-renders the page so the URL arrives as a new
+   * prop — state initialised once would have kept showing the token that didn't
+   * exist yet, or the one that was just replaced.
    */
   shareUrl: string | null;
   members: MemberRow[];
@@ -43,11 +46,32 @@ export function SharingCard({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"viewer" | "editor">("viewer");
   const [copied, setCopied] = useState(false);
+  const [rotateOpen, setRotateOpen] = useState(false);
+  const [rotated, setRotated] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
 
   function togglePublic() {
     const next = !shareEnabled;
+    setRotated(false);
     setShareEnabled(next);
     startTransition(() => togglePublicLinkAction(collectionId, next));
+  }
+
+  function rotate() {
+    setRotateError(null);
+    startTransition(async () => {
+      try {
+        await rotateShareTokenAction(collectionId);
+        setCopied(false);
+        setRotated(true);
+        setRotateOpen(false);
+      } catch {
+        // Silence here would be the worst kind: the owner closes the dialog
+        // believing the leaked address is dead while it still resolves.
+        setRotateError("Couldn't rotate this link — the old address still works.");
+        setRotateOpen(false);
+      }
+    });
   }
 
   function invite() {
@@ -85,27 +109,57 @@ export function SharingCard({
           {itemCount} item{itemCount === 1 ? "" : "s"}
         </span>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-          <input type="checkbox" checked={shareEnabled} onChange={togglePublic} disabled={isPending} />
-          Public link
-        </label>
-        {shareEnabled && shareUrl && (
-          <>
-            <span style={{ fontSize: 12.5, color: "var(--color-accent-700)" }}>{shareUrl}</span>
+      <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={shareEnabled} onChange={togglePublic} disabled={isPending} />
+            Public link
+          </label>
+          {shareEnabled && shareUrl && (
+            <>
+              <span style={{ fontSize: 12.5, color: "var(--color-accent-700)" }}>{shareUrl}</span>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 12 }}
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(shareUrl);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </>
+          )}
+          {/* Offered whenever a token exists, not only while the link is on: switching
+              the link off keeps the address, so an owner who has already hidden a leaked
+              link would otherwise have to republish it to be able to replace it. */}
+          {shareUrl && (
             <button
               className="btn btn-ghost"
-              style={{ fontSize: 12 }}
+              style={{ fontSize: 12, color: "#b5544a" }}
               type="button"
+              disabled={isPending}
               onClick={() => {
-                navigator.clipboard.writeText(shareUrl);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
+                setRotateError(null);
+                setRotated(false);
+                setRotateOpen(true);
               }}
             >
-              {copied ? "Copied" : "Copy"}
+              Rotate link
             </button>
-          </>
+          )}
+          {rotated && (
+            <span style={{ fontSize: 12, color: "var(--color-accent-700)" }}>New address issued.</span>
+          )}
+          {rotateError && <span style={{ fontSize: 12, color: "#b5544a" }}>{rotateError}</span>}
+        </div>
+        {!shareEnabled && shareUrl && (
+          <span style={{ fontSize: 11.5, color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
+            The link is off, but its address is remembered — switching it back on hands out the
+            same URL. Rotate it if that URL got out.
+          </span>
         )}
       </div>
       <div style={{ display: "grid", gap: 6 }}>
@@ -166,6 +220,33 @@ export function SharingCard({
           Invite
         </button>
       </div>
+
+      {rotateOpen && (
+        <Dialog
+          open
+          onClose={() => {
+            if (!isPending) setRotateOpen(false);
+          }}
+          title="Rotate the public link?"
+          actions={
+            <>
+              <button className="btn btn-ghost" type="button" disabled={isPending} onClick={() => setRotateOpen(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" type="button" disabled={isPending} onClick={rotate}>
+                {isPending ? "Rotating…" : "Rotate link"}
+              </button>
+            </>
+          }
+        >
+          <p style={{ margin: 0 }}>
+            {collectionName} gets a new address and the current one stops working — that being
+            the point. Anyone still holding the old link, including people you meant to share it
+            with, will need the new one. Nothing else about this collection changes, and the
+            people you invited by email keep their access.
+          </p>
+        </Dialog>
+      )}
     </Blueprint>
   );
 }
