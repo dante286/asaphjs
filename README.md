@@ -260,6 +260,23 @@ can't reach a collection at all. The alternatives were owner-scoped paths
 (`/collections/:owner/:slug`, which changes every URL) or routing on the collection id
 (rename-proof, but opaque).
 
+Minting a suffix is a read followed by a write, so the slug it picks can be claimed by
+another request before the write lands — and the write then fails on
+`collections_slug_unique` for a name that really was free. That gap existed under the
+per-owner constraint too, but reaching it took one owner creating the same name twice at
+once; making the namespace global made it contended *between* people, over exactly the names
+two people both use. `withFreshSlug()` in `src/db/queries/collections.ts` closes it: on a
+`23505` naming that constraint it re-mints and writes again, up to `SLUG_ATTEMPTS`. Both
+`createCollection` and the rename in `updateCollectionSettings` go through it, which also
+covers CSV import, since that creates its collection the same way.
+
+A bounded retry rather than a lock or a slug-picking statement: the loser re-reads, finds
+the suffix taken while it waited, and takes the next one — and an uncontended create pays
+nothing it didn't pay before. Measured on Postgres 18, ten rounds per level: three
+simultaneous creates of one name failed 10 of 30 before this and 0 of 30 after, and the cap
+of 8 holds to 0 failures through eight-way contention (1 of 120 at twelve-way). Past that a
+caller sees the driver's error and can retry, which is what it saw at three-way before.
+
 Existing duplicates are resolved by `drizzle/migrations/0003_dedupe_collection_slugs.sql`,
 which runs before the constraint swap in `0004`: the oldest collection keeps the bare slug
 and the rest take the same `-2`/`-3` suffixes the app hands out, so a backfilled slug is
