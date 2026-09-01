@@ -11,6 +11,9 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:3000
       UPLOADS_DIR: /app/uploads
+      # `false` closes registration. Compose reads this from `.env` (not
+      # `.env.local`) or the shell; unset leaves signups open.
+      ALLOW_SIGNUPS: ${ALLOW_SIGNUPS:-true}
       # Metadata lookups. Compose reads these from `.env` (not `.env.local`) or
       # the shell; leaving them unset is fine — collections whose provider has no
       # credentials just show no lookup panel. Open Library needs none.
