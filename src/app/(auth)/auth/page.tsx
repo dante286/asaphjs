@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
+import { signupsAllowed } from "@/lib/auth/signups";
 import { AuthForm } from "@/components/auth/AuthForm";
 
 export default async function AuthPage({
@@ -59,7 +60,9 @@ export default async function AuthPage({
           </p>
         </div>
 
-        <AuthForm next={next || "/"} />
+        {/* getSession() reads headers(), so this page is dynamic and
+            ALLOW_SIGNUPS is read per request rather than frozen into a build. */}
+        <AuthForm next={next || "/"} allowSignups={signupsAllowed()} />
       </div>
     </div>
   );

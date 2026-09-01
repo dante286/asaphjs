@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/client";
+import { signupsAllowed } from "./signups";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -11,6 +12,11 @@ export const auth = betterAuth({
     enabled: true,
     requireEmailVerification: false,
     minPasswordLength: 8,
+    // Closing registration here covers both entry points at once: `signUpAction`
+    // calls `auth.api.signUpEmail` rather than reimplementing the insert, so the
+    // Server Action and `/api/auth/sign-up/email` reject on the same check and
+    // can't drift apart. Rejects 400 EMAIL_PASSWORD_SIGN_UP_DISABLED.
+    disableSignUp: !signupsAllowed(),
   },
   user: {
     additionalFields: {

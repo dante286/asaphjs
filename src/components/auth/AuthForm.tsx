@@ -5,7 +5,7 @@ import { signInAction, signUpAction, type AuthActionState } from "@/actions/auth
 import { Blueprint } from "@/components/ui/Blueprint";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
-export function AuthForm({ next }: { next: string }) {
+export function AuthForm({ next, allowSignups }: { next: string; allowSignups: boolean }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [signInState, signInFormAction, signInPending] = useActionState<
     AuthActionState,
@@ -16,7 +16,11 @@ export function AuthForm({ next }: { next: string }) {
     FormData
   >(signUpAction, undefined);
 
-  const isSignUp = mode === "signup";
+  // With registration closed the sign-up half of the form is never reachable —
+  // no segment to switch on it, and `mode` can't be anything but "signin". The
+  // API rejects it too (`disableSignUp`); hiding it here is so a closed door
+  // isn't something you discover by filling in a form and submitting it.
+  const isSignUp = allowSignups && mode === "signup";
   const state = isSignUp ? signUpState : signInState;
   const pending = isSignUp ? signUpPending : signInPending;
 
@@ -25,15 +29,19 @@ export function AuthForm({ next }: { next: string }) {
       className="elev-none"
       style={{ padding: "clamp(20px,3vw,32px)", background: "var(--color-surface)" }}
     >
-      <SegmentedControl
-        name="authmode"
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: "signin", label: "Sign in" },
-          { value: "signup", label: "Create account" },
-        ]}
-      />
+      {allowSignups ? (
+        <SegmentedControl
+          name="authmode"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "signin", label: "Sign in" },
+            { value: "signup", label: "Create account" },
+          ]}
+        />
+      ) : (
+        <div style={{ fontSize: 15, fontWeight: 600 }}>Sign in</div>
+      )}
       <div style={{ marginTop: 20 }}>
         <form action={isSignUp ? signUpFormAction : signInFormAction} style={{ display: "grid", gap: 14 }}>
           <input type="hidden" name="next" value={next} />

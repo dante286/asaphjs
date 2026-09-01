@@ -37,6 +37,10 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) works, the
    32-char "API Key" or the longer "API Read Access Token".
 
+   `ALLOW_SIGNUPS` is optional too and defaults to open. Don't set it to `false`
+   yet — see [Closing registration on an instance](#closing-registration-on-an-instance),
+   which needs an account to exist first.
+
 3. **Database.** Any Postgres 14+ works; Postgres 18 is the tested/recommended version.
    Easiest is the `db` service already defined in `docker-compose.yml`:
 
@@ -139,6 +143,42 @@ into new or existing collections (type-guessing, mapping, batch rollback), shari
 (profile, password, sessions, rename/delete per collection, CSV/JSON export), photo upload
 for item covers, and metadata lookups against IGDB (games), Open Library
 (books/comics/manga) and TMDB (movies/TV shows/anime).
+
+### Closing registration on an instance
+
+`ALLOW_SIGNUPS=false` closes registration: the "Create account" segment disappears from
+`/auth` and the sign-up API answers 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED`. It's the switch
+for running Asaph for one person or a household on a URL anyone can reach. Set it in
+`.env.local` for local dev, or the top-level `.env` for Compose, and restart the server —
+`betterAuth()` reads the flag once at startup.
+
+Only the literal `false` closes signups. Unset, empty, or a typo (`fasle`, `no`, `0`) leaves
+them open. That's deliberate: failing *closed* on a typo would be safer for a private
+instance, but the failure it creates is worse — an operator with no account and no UI to fix
+it, needing an env edit and a redeploy to get back in. Open-on-garbage is the recoverable
+mistake.
+
+One option covers both entry points. `signUpAction` calls `auth.api.signUpEmail` rather than
+reimplementing the insert, so `emailAndPassword.disableSignUp` in `src/lib/auth/auth.ts`
+rejects the Server Action and `/api/auth/sign-up/email` on the same check — there's no second
+guard to write, and so no way for the two to drift apart. Hiding the tab in `AuthForm` is
+about honesty, not enforcement: a closed door shouldn't be something you discover by filling
+in a form and submitting it.
+
+**Create your account before you close registration.** A fresh deployment with
+`ALLOW_SIGNUPS=false` and an empty `user` table has no way in at all — no first-run bootstrap,
+no admin CLI. Sign up first, confirm you can sign in, *then* flip the flag and restart. If you
+seeded with `npm run db:seed -- --demo`, the `demo@example.com` account described in step 5
+already exists and is a usable way in, so a demo instance can be closed straight away — change
+its password first, since the seed's is published on this page.
+
+**Invites only work for people who already have an account.** An invite token doesn't
+authorize a registration. `/invite/:token` sends a signed-out visitor to
+`/auth?next=/invite/:token`, and with signups closed the only thing there is a sign-in form —
+so an invited person with no account cannot accept, and the invite is dead. The invite page
+says as much when the flag is set rather than sending them to `/auth` to find the tab missing.
+Sharing on a closed instance means everyone you share with has an account you made while
+registration was open.
 
 ### Renaming moves a collection's URL
 
