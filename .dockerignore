@@ -16,3 +16,12 @@ README.md
 Dockerfile
 .dockerignore
 docker-compose.yml
+
+# tests — the builder stage does `COPY . .`, so without these every test-only
+# change busts the layer cache and pays for a full `next build` inside Docker.
+# Nothing here is imported by the app: the tests are colocated but never
+# reachable from a route, and src/test holds their fixtures.
+vitest.config.mts
+coverage
+src/test
+**/*.test.ts
