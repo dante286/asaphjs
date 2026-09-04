@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // `npm run test:coverage` writes an HTML report whose bundled scripts carry
+    // their own eslint-disable directives. Flat config doesn't read .gitignore,
+    // so without this a coverage run leaves `npm run lint` dirty.
+    "coverage/**",
   ]),
 ]);
 

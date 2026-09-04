@@ -125,6 +125,9 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | --- | --- |
 | `npm run dev` | Dev server |
 | `npm run build` / `npm run start` | Production build / serve |
+| `npm test` | Unit tests — needs no database, no network, no env (see below) |
+| `npm run test:watch` | The same tests, re-running on change |
+| `npm run test:coverage` | Coverage over the pure-logic modules |
 | `npm run db:generate` | Generate a Drizzle migration from schema changes |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema directly (no migration file — dev convenience) |
@@ -133,6 +136,40 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | `npm run db:seed -- --demo` | Same, plus the two demo accounts, their collections, and the sharing fixtures |
 | `npm run lookup:check` | Prove the metadata cache spares the provider's free tier (see below) |
 | `npm run covers:backfill` | Mirror already-matched items' provider covers (dry run; `-- --apply` writes) |
+
+## Tests
+
+`npm test` runs Vitest over the pure-logic modules — the ones holding the decisions
+that are hard to check by eye. `buildPrefillPlan` deciding which provider values may
+overwrite an owner's own data, `guessColumnType` deciding what a CSV column *is*,
+`NAME_PATTERN` deciding which upload names can't escape the uploads directory, and
+`stripItemsForPublic` deciding what a stranger with a share link may see.
+
+The property worth protecting is that this needs **nothing set up**: no database, no
+network, no browser, no environment variables. It runs in well under a second from a
+clean checkout. Vitest doesn't hand `.env` to `process.env`, so a machine with a full
+`.env` and a fresh clone behave identically; the two modules that do read env
+(`signupsAllowed`, `resolveLookupConfig`) stub it in both directions rather than
+inheriting whatever the developer happens to have exported.
+
+Tests are colocated as `*.test.ts` next to their subject, so an untested module is
+visible in a directory listing — except under `src/app/`, where the App Router matches
+files by convention and a stray sibling is asking for trouble. `vitest.config.mts` is a
+`projects` array with one project in it, leaving the seam for the tiers that need real
+infrastructure.
+
+There's no DOM environment on purpose. Every page under `src/app/(app)` is an async
+Server Component, which Vitest can't render, so jsdom would buy a slower run and nothing
+else — components belong to an E2E suite. Coverage is reported over an allowlist of these
+modules rather than the whole tree, and carries no thresholds: the async query and
+network functions are uncovered by design here, so a whole-tree percentage would be a
+number about work this tier isn't doing.
+
+Two tests are `skip`ped rather than deleted. Each holds the assertion that *should*
+pass, against a bug the suite turned up while being written: `timeAgo` renders days 360
+through 364 as "0 years ago", and `cloneTemplateFields` shares a select's `options` array
+with the template row it copied, which is the exact thing its comment says it prevents.
+Both are behaviour changes, so they're tracked on their own rather than folded in here.
 
 ## What's implemented
 
