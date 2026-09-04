@@ -101,6 +101,16 @@ function yearOf(game: IgdbGame): number | undefined {
   return game.first_release_date ? new Date(game.first_release_date * 1000).getUTCFullYear() : undefined;
 }
 
+/**
+ * A hydrate id is matched against this before it reaches the `where` clause,
+ * where it would otherwise be an APICalypse injection — `"1017; where id = 2"`
+ * ends the clause and asks a different question. Matched as digits rather than
+ * parsed because `Number("")` and `Number(" ")` are both 0 and
+ * `Number.isInteger(0)` is true, so a blank id used to pass the check and spend
+ * a query on a game IGDB has never had.
+ */
+const IGDB_ID = /^\d+$/;
+
 export const igdbProvider: MetadataProvider = {
   key: "igdb",
   async search(query): Promise<Candidate[]> {
@@ -126,8 +136,8 @@ export const igdbProvider: MetadataProvider = {
   },
 
   async hydrate(sourceId): Promise<HydratedFields> {
+    if (!IGDB_ID.test(sourceId)) throw new Error(`Invalid IGDB id: ${sourceId}`);
     const id = Number(sourceId);
-    if (!Number.isInteger(id)) throw new Error(`Invalid IGDB id: ${sourceId}`);
 
     const [game] = await igdbQuery("games", `where id = ${id}; fields ${HYDRATE_FIELDS}; limit 1;`);
     if (!game) throw new Error(`IGDB game ${sourceId} not found`);

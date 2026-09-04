@@ -564,6 +564,11 @@ blank field:
   ahead of it — "chrono trigger" puts three Satellaview add-ons above the 1995 SNES
   cartridge. Searches filter to main games, remakes, remasters, ports and expanded
   editions, and show platform and year so you can tell the releases apart.
+- IGDB is also the only provider whose id lands in a query *body* rather than a URL path:
+  APICalypse reads `where id = 1017;` as text, so a `;` in a source id would end the clause
+  and ask a different question. A hydrate id is matched against `/^\d+$/` before it gets
+  that far, which rejects a blank id in the same stroke — that one used to parse as 0 and
+  spend a query on a game IGDB has never had (#50).
 - **Open Library** work records name their authors and series *by key*
   (`/authors/OL1425963A`), not by value, and a work's `covers` array can be empty for a
   work the search index does have art for. So a hydrate reads the work, its search-index
