@@ -76,9 +76,8 @@ describe("timeAgo: months and years", () => {
   // Skipped, not deleted: days 360 through 364 currently render as
   // "0 years ago", because months hits 12 (at 360 days, on the 30-day month)
   // five days before years reaches 1 (at 365). This is the assertion that
-  // should pass; it is a behaviour change rather than a test gap, so it is
-  // tracked separately instead of being folded into the issue that added this
-  // suite.
+  // should pass; unskip it with the fix, and tighten it to the exact string
+  // once #41 settles which way the boundary moves.
   it.skip.each([360, 364])("renders %i days ago as a month count, not 0 years", (days) => {
     expect(timeAgo(daysAgo(days))).not.toBe("0 years ago");
   });

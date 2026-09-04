@@ -167,9 +167,10 @@ number about work this tier isn't doing.
 
 Two tests are `skip`ped rather than deleted. Each holds the assertion that *should*
 pass, against a bug the suite turned up while being written: `timeAgo` renders days 360
-through 364 as "0 years ago", and `cloneTemplateFields` shares a select's `options` array
-with the template row it copied, which is the exact thing its comment says it prevents.
-Both are behaviour changes, so they're tracked on their own rather than folded in here.
+through 364 as "0 years ago" (#41), and `cloneTemplateFields` shares a select's `options`
+array with the template row it copied, which is the exact thing its comment says it
+prevents (#42 — latent, since nothing calls it yet). Both are behaviour changes, so
+they're tracked on their own rather than folded in here.
 
 ## What's implemented
 
