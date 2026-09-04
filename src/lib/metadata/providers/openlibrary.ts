@@ -9,7 +9,7 @@ const BASE = "https://openlibrary.org";
 // every doc — hundreds of KB for ten results, nearly all of it unused.
 const SEARCH_FIELDS = "key,title,author_name,first_publish_year,cover_i,publisher,subject";
 
-type OpenLibraryDoc = {
+export type OpenLibraryDoc = {
   key: string;
   title?: string;
   first_publish_year?: number;
@@ -19,7 +19,7 @@ type OpenLibraryDoc = {
   subject?: string[];
 };
 
-type OpenLibraryWork = {
+export type OpenLibraryWork = {
   title?: string;
   subjects?: string[];
   covers?: number[];

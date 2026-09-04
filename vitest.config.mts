@@ -1,11 +1,14 @@
 import { defineConfig } from "vitest/config";
 
 /**
- * Structured as a `projects` array with one project defined, because the plan
- * is for more than one: a `providers` tier that fakes provider HTTP and a `db`
- * tier that needs Postgres. Those need setup files and environments this tier
- * must not inherit, and adding the split later means moving every option down a
- * level. Leaving room for it costs one nesting level now.
+ * Two tiers, with a third (`db`, needing Postgres) still to come. Both of these
+ * need nothing set up — no database, no network, no credentials — so `vitest
+ * run` runs them together and CI needs no services for either.
+ *
+ * The split is by setup, not by speed: the `providers` tier loads setup files
+ * that scrub provider credentials out of `process.env`, replace the rate
+ * limiter and stand MSW up. None of that may leak into the unit tier, whose
+ * whole claim is that it runs a plain module with nothing around it.
  *
  * `resolve.tsconfigPaths` resolves `@/*` by reading tsconfig.json, so the alias
  * can't drift from the one Next uses. The bundled Next guide reaches for the
@@ -35,10 +38,34 @@ export default defineConfig({
           // E2E suite's job.
           environment: "node",
           include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
-          // Tests are colocated, but never under src/app: the App Router
-          // matches route.ts and page.tsx by convention, and a sibling
-          // *.test.ts there is one rename away from being treated as a route.
-          exclude: ["src/app/**"],
+          exclude: [
+            // Tests are colocated, but never under src/app: the App Router
+            // matches route.ts and page.tsx by convention, and a sibling
+            // *.test.ts there is one rename away from being treated as a route.
+            "src/app/**",
+            // The providers tier's files, which this tier's `src/**` would
+            // otherwise also collect — and then run without any of the setup
+            // they need. One directory rather than a filename convention, so a
+            // new provider's spec joins the right tier by living next to its
+            // subject.
+            "src/lib/metadata/providers/**",
+          ],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "providers",
+          environment: "node",
+          include: ["src/lib/metadata/providers/**/*.test.ts"],
+          /**
+           * A setup file rather than per-spec hooks, because the ordering is
+           * the point: providers read `process.env` and build their rate
+           * limiter at module evaluation, so the credential scrub and the
+           * limiter mock have to land before the spec that imports them is
+           * loaded. Setup files run first, which is what buys that.
+           */
+          setupFiles: ["./src/test/providers/setup.ts"],
         },
       },
     ],
@@ -47,9 +74,9 @@ export default defineConfig({
       reporter: ["text", "html"],
       /**
        * An allowlist, not the whole tree. Coverage over `src/**` would report a
-       * number dominated by React components and route handlers this tier
-       * deliberately doesn't test, which makes the figure useless for the one
-       * thing it's for — seeing whether the pure-logic modules are covered.
+       * number dominated by React components and route handlers these tiers
+       * deliberately don't test, which makes the figure useless for the one
+       * thing it's for — seeing whether the modules they do test are covered.
        *
        * No thresholds. A number nobody has measured is a guess, not a standard;
        * they land once there's data to set them from.
@@ -58,6 +85,11 @@ export default defineConfig({
         "src/lib/metadata/prefill.ts",
         "src/lib/metadata/cover-mirror.ts",
         "src/lib/metadata/lookup-config.ts",
+        "src/lib/metadata/cached-provider.ts",
+        "src/lib/metadata/rate-limiter.ts",
+        "src/lib/metadata/providers/igdb.ts",
+        "src/lib/metadata/providers/tmdb.ts",
+        "src/lib/metadata/providers/openlibrary.ts",
         "src/lib/fields/type-guess.ts",
         "src/lib/fields/field-def.ts",
         "src/lib/fields/item-values.ts",
