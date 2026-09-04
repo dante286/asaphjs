@@ -92,7 +92,15 @@ export async function getCollectionByShareToken(token: string) {
   });
 }
 
-function slugify(name: string): string {
+/**
+ * The input to the whole slug system: what a name becomes before uniqueness is
+ * considered at all. Exported because it is pure and has a contract worth
+ * pinning — every non-alphanumeric run collapses to one hyphen, the ends are
+ * trimmed, and a name with nothing left becomes "collection" rather than "".
+ * `uniqueSlug` and `withFreshSlug` stay private; they are only meaningful
+ * against a database and are covered through `createCollection`.
+ */
+export function slugify(name: string): string {
   return (
     name
       .trim()

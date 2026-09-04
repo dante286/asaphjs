@@ -86,13 +86,77 @@ jobs:
           NEXT_TELEMETRY_DISABLED: 1
         run: npm run build
 
+  # The tier that needs a database. Separate from `verify` rather than a step
+  # inside it: a service container costs every push that job's startup, and the
+  # hermetic checks should still report on their own when Postgres is the thing
+  # that broke.
+  integration:
+    runs-on: ubuntu-latest
+
+    services:
+      # The same image docker-compose.yml pins, so CI and a developer's laptop
+      # run these specs against the same server. Postgres 18 is where the slug
+      # concurrency numbers in db/queries/collections.ts were measured.
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          # Migrated by the step below. The specs never touch it: they create
+          # their own `asaph_test_*` databases on this server.
+          POSTGRES_DB: asaph
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/asaph
+      # Pinned empty rather than left unset, so `isProviderConfigured()` is
+      # false here even if an org-level Actions variable appears later. The
+      # tier's setup file blanks them too — this says the same thing where
+      # someone reading the workflow can see it.
+      IGDB_CLIENT_ID: ""
+      IGDB_CLIENT_SECRET: ""
+      TMDB_API_KEY: ""
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Before any test, and against the empty database the service just
+      # created. Nothing else proves drizzle/migrations/meta/_journal.json is
+      # consistent with the files beside it — the tier's own setup applies the
+      # same migrations, but a failure there reads as a broken test run rather
+      # than as a broken migration.
+      #
+      # `drizzle.config.ts` reads `.env.local`, which doesn't exist in a
+      # checkout; dotenv doesn't overwrite an already-set variable, so the
+      # DATABASE_URL above wins and the missing file is a silent no-op.
+      - name: Apply the migrations to an empty database
+        if: ${{ !cancelled() }}
+        run: npm run db:migrate
+
+      - name: Integration tests
+        if: ${{ !cancelled() }}
+        run: npm run test:db
+
   # The single check name branch protection requires. Adding a job above means
   # adding it to `needs` here rather than editing repo settings again — and a
   # required check that doesn't exist blocks every merge, which is the failure
   # this indirection is here to prevent.
   ci-required:
     if: ${{ always() }}
-    needs: [verify]
+    needs: [verify, integration]
     runs-on: ubuntu-latest
     steps:
       # Anything that isn't success — failure, cancelled, skipped — is red.
@@ -100,4 +164,6 @@ jobs:
       - name: Fail unless every job succeeded
         run: |
           echo "verify: ${{ needs.verify.result }}"
+          echo "integration: ${{ needs.integration.result }}"
           test "${{ needs.verify.result }}" = "success"
+          test "${{ needs.integration.result }}" = "success"

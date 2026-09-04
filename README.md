@@ -127,7 +127,8 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | `npm run build` / `npm run start` | Production build / serve |
 | `npm test` | Unit and provider tests — needs no database, no network, no env (see below) |
 | `npm run test:watch` | The same tests, re-running on change |
-| `npm run test:coverage` | Coverage over the tested modules |
+| `npm run test:db` | Integration tests against real Postgres — needs `docker compose up -d db` |
+| `npm run test:coverage` | Coverage over the tested modules (runs all three tiers, so it needs the database too) |
 | `npm run db:generate` | Generate a Drizzle migration from schema changes |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema directly (no migration file — dev convenience) |
@@ -139,10 +140,16 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 
 ## Tests
 
-`npm test` runs two Vitest projects, `unit` and `providers`. Both need **nothing set
+Three Vitest projects. `npm test` runs `unit` and `providers`, which need **nothing set
 up**: no database, no network, no browser, no environment variables. Together they run in
 well under a second from a clean checkout. Vitest doesn't hand `.env` to `process.env`, so
 a machine with a full `.env` and a fresh clone behave identically.
+
+`npm run test:db` runs the third, `integration`, against a real Postgres — one
+`docker compose up -d db` away, and the only tier that asks for anything. It's named
+explicitly rather than excluded from `npm test`: a tier that needs infrastructure has to
+opt *in*, or the promise that `npm test` works from a clean checkout lasts exactly until
+someone adds a tier.
 
 ### The unit tier
 
@@ -194,21 +201,86 @@ limiter at module load, and Open Library's is capacity 1 refilling once a second
 `hydrate` makes up to five requests — one unmitigated test would spend four seconds of
 wall clock for no signal about anything this tier tests.
 
+### The integration tier
+
+`src/db/queries/` is about 1,000 lines of Drizzle that every route and action funnels
+through, and the rules that matter are in the SQL rather than around it: `patchItem` merges
+and deletes jsonb keys with a raw `||` / `- text[]` expression inside a transaction that
+takes `FOR UPDATE`; `resolveRole` is the authorization decision the whole app rests on;
+`getCollectionStats` counts with `count(*) filter (...)`; `sortTitle` is a generated column
+Postgres maintains. None of that means anything against a substitute.
+
+**Real Postgres, not an emulator.** `pg-mem` and PGlite were both considered and neither
+survives migration `0000` — the schema uses generated columns, a `jsonb_path_ops` GIN
+index, `count(*) filter`, `SELECT ... FOR UPDATE`, and `0003` is a hand-written `DO $$`
+data migration. Emulation would fail before the first test ran. `docker-compose.yml`
+already pins `postgres:18-alpine`; CI gets the same image as a service container.
+
+**A template database, cloned per worker.** Migrations run once per `vitest run` into
+`asaph_test_template`, and each Vitest worker does `CREATE DATABASE ... TEMPLATE ...`,
+which on Postgres is a filesystem copy and costs tens of milliseconds. That is what makes
+the isolation problem go away rather than be worked around: `src/db/client.ts` exports one
+module-level pool and every query module imports it directly, so there is no seam to inject
+a transaction through — the usual transaction-per-test-with-rollback would mean mocking the
+singleton wholesale, *and* it would make the concurrency test below impossible by
+construction. A database per worker means the shared pool is simply pointed somewhere
+private. Nothing outside `asaph_test_*` is ever created, written or dropped; the database
+named in your `DATABASE_URL` is read for its server address and otherwise left alone.
+
+Between tests, one `TRUNCATE ... RESTART IDENTITY CASCADE` over every table, then a
+`DELETE FROM "user"`. The two statements are deliberate: `CASCADE` also truncates anything
+holding a foreign key into what it truncated, and `templates.owner_id` references `user` —
+so truncating users takes the seeded system templates with it. Deleting users row by row
+runs the schema's own `on delete cascade` instead, which removes only the templates a test's
+user owned and leaves the 15 system rows (owner `null`) that collection creation clones
+from.
+
+The databases are dropped again when the run ends. `KEEP_TEST_DATABASES=1 npm run test:db`
+leaves them, which is what to reach for when a spec fails and the rows it left behind are
+the evidence — the next run drops them anyway.
+
+**The concurrency test is the point.** `withFreshSlug` retries when the unique index claims
+a slug between minting it and writing it — the most recently changed code in the repo, and
+behaviour that exists only across genuinely concurrent connections. Three simultaneous
+`createCollection("Movies")` calls all land with distinct slugs; so do eight; so do four
+simultaneous renames onto one name. Removing the retry loop fails all three with `duplicate
+key value violates unique constraint "collections_slug_unique"`, which was checked rather
+than assumed — a concurrency test that passes against broken code is worse than no test.
+
+Users are created through `auth.api.signUpEmail`, not by inserting into `user` and
+`account`. Authentication here is email/password against our own Postgres with no external
+identity provider, so there is nothing to stub, and a hand-rolled insert would only be a
+second, wrong implementation of Better Auth's schema. Cover deletes write and then look for
+real files, under a per-worker directory in the OS temp folder rather than the repo's own
+`uploads/`.
+
+CI runs this as its own job against a `postgres:18-alpine` service container with no
+secrets, and applies the migrations to an empty database as a separate step before any spec
+runs — nothing else proves `drizzle/migrations/meta/_journal.json` is consistent with the
+files beside it.
+
 ### Conventions
 
 Tests are colocated as `*.test.ts` next to their subject, so an untested module is visible
 in a directory listing — except under `src/app/`, where the App Router matches files by
 convention and a stray sibling is asking for trouble. Which tier a spec belongs to follows
-from where it lives: everything under `src/lib/metadata/providers/` is the providers tier,
-everything else the unit tier. The shared MSW plumbing sits in `src/test/providers/`.
+from where it lives or what it's called: everything under `src/lib/metadata/providers/` is
+the providers tier, `*.db.test.ts` anywhere is the integration tier, everything else is the
+unit tier. The naming rather than a directory for the last one, because `db/queries` holds
+both kinds — most of those modules have a pure function worth testing with nothing running
+next to SQL that needs a server (`slugify` beside `withFreshSlug`, `stripItemsForPublic`
+beside `patchItem`). Shared plumbing sits in `src/test/providers/` and `src/test/db/`.
 
 There's no DOM environment on purpose. Every page under `src/app/(app)` is an async Server
 Component, which Vitest can't render, so jsdom would buy a slower run and nothing else —
 components belong to an E2E suite. Coverage is reported over an allowlist of the tested
-modules rather than the whole tree, and carries no thresholds: the route handlers, server
-actions and query functions are uncovered by design here, so a whole-tree percentage would
-be a number about work these tiers aren't doing. The three providers, `cached-provider.ts`
-and `rate-limiter.ts` are at 100% of statements, branches, functions and lines.
+modules rather than the whole tree, and carries no thresholds: the route handlers and server
+actions are uncovered by design here, so a whole-tree percentage would be a number about
+work these tiers aren't doing. The three providers, `cached-provider.ts` and
+`rate-limiter.ts` are at 100% of statements, branches, functions and lines; every module in
+`db/queries` is at 100% of statements, functions and lines and 97% of branches, all of it
+from the integration tier — which is why `test:coverage` runs all three projects and
+therefore wants the database up.
 
 Three bugs the suite turned up while being written are held as `skip`ped tests rather
 than deleted, each one the assertion that *should* pass: `timeAgo` renders days 360
