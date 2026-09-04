@@ -126,6 +126,19 @@ export default defineConfig({
        * when it is the thing this list was extended for.
        */
       include: [
+        // The route handlers and actions the integration tier calls directly.
+        // `api/auth/[...all]` is Better Auth's own handler and is deliberately
+        // absent: testing it here would be testing the library.
+        "src/app/api/account/export/*/route.ts",
+        "src/app/api/collections/**/route.ts",
+        "src/app/api/lookup/**/route.ts",
+        "src/app/api/uploads/**/route.ts",
+        "src/actions/collections.ts",
+        "src/actions/imports.ts",
+        "src/actions/members.ts",
+        "src/actions/metadata.ts",
+        "src/actions/account.ts",
+        "src/lib/auth/api-guard.ts",
         "src/lib/metadata/prefill.ts",
         "src/lib/metadata/cover-mirror.ts",
         "src/lib/metadata/lookup-config.ts",

@@ -254,7 +254,36 @@ second, wrong implementation of Better Auth's schema. Cover deletes write and th
 real files, under a per-worker directory in the OS temp folder rather than the repo's own
 `uploads/`.
 
-CI runs this as its own job against a `postgres:18-alpine` service container with no
+**The route handlers and server actions are in this tier too**, because they are where
+authorization actually happens and the alternative is clicking through the UI as one user at
+a time — which is exactly how you never notice that an editor can reach an owner-only
+action. `requireRole` is tested as a matrix: five kinds of caller (owner, editor, viewer,
+share link, anonymous) against each `allowed` set the handlers pass, so a hole shows up as a
+failing row rather than as a support question.
+
+Calling a route handler is calling a function. `requireRole` reads `request.headers`, not
+`next/headers`, so a spec builds a `Request` carrying a real Better Auth session cookie —
+signed by the library, validated by the library — and invokes the exported `GET`/`POST`/
+`PATCH`/`DELETE` directly. No HTTP server, no route mocking, no Next request scope. The
+`/api/lookup` route and the Server Actions do reach `next/headers`, so those specs mock that
+one function and nothing else; the session validation stays real, which is what makes
+"signed out" the library's answer rather than a stub's.
+
+What that buys, beyond status codes: the photo route's 10MB cap is checked twice (once on
+the client's own `content-length`, once on the decoded part) and both are exercised; a patch
+that fails after the file is written leaves an empty uploads directory, asserted by reading
+the directory rather than by trusting the code path; `/api/uploads/[name]` — deliberately
+unauthenticated, since covers render on public share pages with no cookie — gets seventeen
+traversal probes (`../`, `..%2f`, a null byte, an `.svg`, an over-long stem) and every one
+404s; and `applyLookupAction`'s compensating delete is checked by mirroring a real cover
+through sharp and then losing the race.
+
+The whole failure ladder of `/api/lookup/[provider]/search` is reachable with **no
+credentials at all** — 401 without a session, 400 for an unknown provider or a query under
+two characters, 503 for a provider with no key configured, 502 by pointing MSW at a 500 —
+which is a property of how `isProviderConfigured` was written rather than a coincidence.
+
+CI runs all of this as its own job against a `postgres:18-alpine` service container with no
 secrets, and applies the migrations to an empty database as a separate step before any spec
 runs — nothing else proves `drizzle/migrations/meta/_journal.json` is consistent with the
 files beside it.
@@ -263,24 +292,35 @@ files beside it.
 
 Tests are colocated as `*.test.ts` next to their subject, so an untested module is visible
 in a directory listing — except under `src/app/`, where the App Router matches files by
-convention and a stray sibling is asking for trouble. Which tier a spec belongs to follows
-from where it lives or what it's called: everything under `src/lib/metadata/providers/` is
-the providers tier, `*.db.test.ts` anywhere is the integration tier, everything else is the
-unit tier. The naming rather than a directory for the last one, because `db/queries` holds
-both kinds — most of those modules have a pure function worth testing with nothing running
-next to SQL that needs a server (`slugify` beside `withFreshSlug`, `stripItemsForPublic`
-beside `patchItem`). Shared plumbing sits in `src/test/providers/` and `src/test/db/`.
+convention and a stray sibling is asking for trouble. The route-handler specs are the one
+thing that can't be colocated for that reason, so they live in `src/test/api/`, one file per
+route, named for the route they call. Server Actions aren't under `src/app/`, so those sit
+next to their subject like everything else.
+
+Which tier a spec belongs to follows from where it lives or what it's called: everything
+under `src/lib/metadata/providers/` is the providers tier, `*.db.test.ts` anywhere is the
+integration tier, everything else is the unit tier. The naming rather than a directory for
+the last one, because a module often has both kinds — a pure function worth testing with
+nothing running next to code that needs a server (`slugify` beside `withFreshSlug`,
+`stripItemsForPublic` beside `patchItem`). Shared plumbing sits in `src/test/providers/` and
+`src/test/db/`.
 
 There's no DOM environment on purpose. Every page under `src/app/(app)` is an async Server
 Component, which Vitest can't render, so jsdom would buy a slower run and nothing else —
 components belong to an E2E suite. Coverage is reported over an allowlist of the tested
-modules rather than the whole tree, and carries no thresholds: the route handlers and server
-actions are uncovered by design here, so a whole-tree percentage would be a number about
-work these tiers aren't doing. The three providers, `cached-provider.ts` and
-`rate-limiter.ts` are at 100% of statements, branches, functions and lines; every module in
-`db/queries` is at 100% of statements, functions and lines and 97% of branches, all of it
-from the integration tier — which is why `test:coverage` runs all three projects and
-therefore wants the database up.
+modules rather than the whole tree, and carries no thresholds: React components are
+uncovered by design here, so a whole-tree percentage would be a number about work these
+tiers aren't doing. Across that allowlist — the providers, the query layer, the route
+handlers, the server actions and the pure-logic libraries — it stands at 98% of statements,
+95% of branches and 100% of functions. `test:coverage` runs all three projects and therefore
+wants the database up.
+
+What's left uncovered is, deliberately, the branches that can't be reached without mocking
+the client: `row?.count ?? 0` after an aggregate that always returns a row, a
+`collection?.fields ?? []` for a collection that vanished between the guard and the read, a
+`catch` for a Better Auth error that isn't an `APIError`. Two of them are a live oddity
+rather than defensive code — `view-prefs` has a branch for a caller its own guard already
+refuses (#47).
 
 Three bugs the suite turned up while being written are held as `skip`ped tests rather
 than deleted, each one the assertion that *should* pass: `timeAgo` renders days 360

@@ -27,16 +27,46 @@ export const TEST_PASSWORD = "integration-tier-password";
  */
 let userCount = 0;
 
-export type TestUser = { id: string; email: string; name: string };
+export type TestUser = {
+  id: string;
+  email: string;
+  name: string;
+  /**
+   * A `cookie` header carrying this user's real session, for handing to a route
+   * handler. `requireRole` reads `request.headers` rather than `next/headers`,
+   * so a hand-built Request with this on it is all a route test needs — no Next
+   * request scope, no route mocking, no HTTP server.
+   */
+  cookie: string;
+};
 
 export async function createTestUser(over: { email?: string; name?: string } = {}): Promise<TestUser> {
   userCount += 1;
   const email = over.email ?? `owner-${process.env.VITEST_POOL_ID ?? "1"}-${userCount}@asaph.test`;
   const name = over.name ?? `Owner ${userCount}`;
 
-  const { user } = await auth.api.signUpEmail({ body: { email, password: TEST_PASSWORD, name } });
+  // `asResponse` so the session cookies come back as Better Auth would set them
+  // in a browser — signed, and validated by the same code on the way back in.
+  // One call gives both the row and the credential; signing in again afterwards
+  // would just be a second scrypt verify.
+  const response = await auth.api.signUpEmail({
+    body: { email, password: TEST_PASSWORD, name },
+    asResponse: true,
+  });
+  const { user } = (await response.json()) as { user: { id: string } };
 
-  return { id: user.id, email, name };
+  return { id: user.id, email, name, cookie: cookieHeaderFrom(response) };
+}
+
+/**
+ * Both cookies Better Auth sets — the signed session token and the short-lived
+ * session-data cache — joined the way a browser would send them back.
+ */
+function cookieHeaderFrom(response: Response): string {
+  return response.headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(";")[0])
+    .join("; ");
 }
 
 /**
