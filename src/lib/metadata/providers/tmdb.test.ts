@@ -260,20 +260,14 @@ describe("tmdbProvider.hydrate", () => {
     await expect(tmdbProvider.hydrate("movie:404404")).rejects.toThrow("TMDB movie 404404 not found");
   });
 
-  it.each(["603", "person:6384", "movie:abc", "movie:1.5"])(
+  // "movie:" and "tv: " are the cases the guard used to miss: `Number("")` and
+  // `Number(" ")` are both 0, so they decoded to id 0 and cost a request to
+  // reject (#44).
+  it.each(["603", "person:6384", "movie:abc", "movie:1.5", "movie:", "tv: "])(
     "rejects the source id %j before asking TMDB",
     async (sourceId) => {
       await expect(tmdbProvider.hydrate(sourceId)).rejects.toThrow(/Invalid TMDB source id/);
       expect(await recordedRequests()).toEqual([]);
     },
   );
-
-  // Skipped because it fails: `Number("")` is 0 and `Number.isInteger(0)` is
-  // true, so an id with an empty half slips past the guard and spends a request
-  // asking TMDB for movie 0. Tightening the guard is a behaviour change, so
-  // it's tracked on its own (#44) rather than folded in here.
-  it.skip.each(["movie:", "tv: "])("rejects the source id %j before asking TMDB", async (sourceId) => {
-    await expect(tmdbProvider.hydrate(sourceId)).rejects.toThrow(/Invalid TMDB source id/);
-    expect(await recordedRequests()).toEqual([]);
-  });
 });

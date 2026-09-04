@@ -103,13 +103,20 @@ function encodeSourceId(mediaType: TmdbMediaType, id: number): string {
   return `${mediaType}:${id}`;
 }
 
+/**
+ * Matched as digits rather than parsed, because `Number("")` and `Number(" ")`
+ * are both 0 and `Number.isInteger(0)` is true: `"movie:"` would otherwise
+ * decode to id 0 and spend a request asking for a record TMDB has never had,
+ * then fail with a message naming 0 instead of the input that was wrong.
+ */
+const TMDB_ID = /^\d+$/;
+
 function decodeSourceId(sourceId: string): { mediaType: TmdbMediaType; id: number } {
   const [mediaType, idStr] = sourceId.split(":");
-  const id = Number(idStr);
-  if ((mediaType !== "movie" && mediaType !== "tv") || !Number.isInteger(id)) {
+  if ((mediaType !== "movie" && mediaType !== "tv") || !TMDB_ID.test(idStr ?? "")) {
     throw new Error(`Invalid TMDB source id: ${sourceId}`);
   }
-  return { mediaType, id };
+  return { mediaType, id: Number(idStr) };
 }
 
 function releaseDateOf(detail: TmdbDetail): string | undefined {
