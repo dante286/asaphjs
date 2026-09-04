@@ -188,12 +188,18 @@ describe("igdbProvider.hydrate", () => {
     expect((await igdb.igdbProvider.hydrate("1017")).platforms).toEqual(["Satellaview"]);
   });
 
-  it("rejects an id that isn't a number before asking IGDB", async () => {
-    // The id is interpolated straight into the query, so this is the check that
-    // keeps a cached sourceId from becoming an APICalypse injection.
-    await expect(igdb.igdbProvider.hydrate("1017; where id = 2")).rejects.toThrow(/Invalid IGDB id/);
-    expect(await recordedRequests()).toEqual([]);
-  });
+  it.each(["1017; where id = 2", "abc", "1.5", "", " "])(
+    "rejects the id %j before asking IGDB",
+    async (sourceId) => {
+      // The id is interpolated straight into the query, so this is the check that
+      // keeps a cached sourceId from becoming an APICalypse injection. "" and " "
+      // are here because `Number("")` is 0 and `Number.isInteger(0)` is true, so
+      // they used to decode to id 0 and spend a token request plus a query to
+      // reject (#50).
+      await expect(igdb.igdbProvider.hydrate(sourceId)).rejects.toThrow(/Invalid IGDB id/);
+      expect(await recordedRequests()).toEqual([]);
+    },
+  );
 
   it("throws when IGDB answers 200 with no rows", async () => {
     // A deleted or merged game — 200 and an empty array, not a 404.
