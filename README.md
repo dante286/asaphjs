@@ -322,14 +322,14 @@ the client: `row?.count ?? 0` after an aggregate that always returns a row, a
 rather than defensive code — `view-prefs` has a branch for a caller its own guard already
 refuses (#47).
 
-Three bugs the suite turned up while being written are held as `skip`ped tests rather
+Two bugs the suite turned up while being written are held as `skip`ped tests rather
 than deleted, each one the assertion that *should* pass: `timeAgo` renders days 360
-through 364 as "0 years ago" (#41), `cloneTemplateFields` shares a select's `options`
+through 364 as "0 years ago" (#41), and `cloneTemplateFields` shares a select's `options`
 array with the template row it copied, which is the exact thing its comment says it
-prevents (#42 — latent, since nothing calls it yet), and a TMDB source id with an empty
-id half (`"movie:"`) slips past `decodeSourceId` because `Number("")` is 0, spending a
-request to reject something the guard exists to reject for free (#44). All three are
-behaviour changes, so they're tracked on their own rather than folded in here.
+prevents (#42 — latent, since nothing calls it yet). Both are behaviour changes, so
+they're tracked on their own rather than folded in here. A third — a TMDB source id with
+an empty id half slipping past `decodeSourceId`, because `Number("")` is 0 — has since
+been fixed (#44), and its cases run with the other malformed-id ones.
 
 ## What's implemented
 
@@ -575,7 +575,9 @@ blank field:
   `form:manga` are machine tags, not genres.
 - **TMDB** covers all three templates it's wired to off one `search/multi` call, because the
   Anime template holds films and series side by side — a source id is `movie:603` or
-  `tv:1396` so a hydrate knows which endpoint to read. TV hits are labelled "TV" in the
+  `tv:1396` so a hydrate knows which endpoint to read. The id half is matched as digits
+  rather than parsed, so a malformed one is rejected before the request instead of costing
+  a call against the free tier to come back a 404. TV hits are labelled "TV" in the
   picker, which together with the year is what tells "cowboy bebop"'s three top hits apart —
   the 1998 series, the 2021 live-action one, and the 2001 film. Only movies group into
   franchises (`belongs_to_collection`); TMDB has no TV equivalent, so Series stays blank on
