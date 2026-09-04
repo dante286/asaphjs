@@ -1,14 +1,18 @@
 import { defineConfig } from "vitest/config";
 
 /**
- * Two tiers, with a third (`db`, needing Postgres) still to come. Both of these
- * need nothing set up — no database, no network, no credentials — so `vitest
- * run` runs them together and CI needs no services for either.
+ * Three tiers. `unit` and `providers` need nothing set up — no database, no
+ * network, no credentials — and are what `npm test` runs. `db` needs a Postgres
+ * server and is `npm run test:db`, which is why that one is named explicitly
+ * rather than excluded: a tier that needs infrastructure has to opt *in*, or
+ * the promise that `npm test` works from a clean checkout lasts exactly until
+ * someone adds a tier.
  *
- * The split is by setup, not by speed: the `providers` tier loads setup files
+ * The split is by setup, not by speed. The `providers` tier loads setup files
  * that scrub provider credentials out of `process.env`, replace the rate
- * limiter and stand MSW up. None of that may leak into the unit tier, whose
- * whole claim is that it runs a plain module with nothing around it.
+ * limiter and stand MSW up; the `db` tier points `DATABASE_URL` at a database
+ * of its own. None of that may leak into the unit tier, whose whole claim is
+ * that it runs a plain module with nothing around it.
  *
  * `resolve.tsconfigPaths` resolves `@/*` by reading tsconfig.json, so the alias
  * can't drift from the one Next uses. The bundled Next guide reaches for the
@@ -49,6 +53,12 @@ export default defineConfig({
             // new provider's spec joins the right tier by living next to its
             // subject.
             "src/lib/metadata/providers/**",
+            // The integration tier's, for the same reason. A directory won't do
+            // here: db/queries holds both kinds, because most of those modules
+            // have a pure function worth testing with nothing running (see
+            // items.test.ts beside items.db.test.ts) as well as SQL that only
+            // means anything against Postgres.
+            "src/**/*.db.test.ts",
           ],
         },
       },
@@ -68,6 +78,35 @@ export default defineConfig({
           setupFiles: ["./src/test/providers/setup.ts"],
         },
       },
+      {
+        extends: true,
+        test: {
+          name: "db",
+          environment: "node",
+          include: ["src/**/*.db.test.ts"],
+          /**
+           * Once per run: drop leftovers, create one database, migrate it, seed
+           * the system templates. Every worker then clones it, which on
+           * Postgres is a filesystem copy — see the file for why a template
+           * database rather than a transaction per test.
+           */
+          globalSetup: ["./src/test/db/global-setup.ts"],
+          /**
+           * Per file, and before the spec is imported: db/client.ts captures
+           * DATABASE_URL at module evaluation, so pointing it at this worker's
+           * own database has to happen first. Also truncates between tests.
+           */
+          setupFiles: ["./src/test/db/setup.ts"],
+          /**
+           * Migrating and cloning happen before any of this, but a cold
+           * Postgres container can still make the first query in a file slower
+           * than the 5s default — and a timeout there reads as a broken spec
+           * rather than a slow server.
+           */
+          testTimeout: 20_000,
+          hookTimeout: 30_000,
+        },
+      },
     ],
     coverage: {
       provider: "v8",
@@ -80,6 +119,11 @@ export default defineConfig({
        *
        * No thresholds. A number nobody has measured is a guess, not a standard;
        * they land once there's data to set them from.
+       *
+       * `npm run test:coverage` runs all three tiers, the `db` one included, so
+       * it needs `docker compose up -d db`. The alternative — measuring the two
+       * hermetic tiers only — would report the query layer as barely covered
+       * when it is the thing this list was extended for.
        */
       include: [
         "src/lib/metadata/prefill.ts",
@@ -98,9 +142,14 @@ export default defineConfig({
         "src/lib/csv/parse.ts",
         "src/lib/auth/signups.ts",
         "src/lib/format.ts",
+        "src/db/queries/collections.ts",
         "src/db/queries/items.ts",
+        "src/db/queries/members.ts",
+        "src/db/queries/imports.ts",
+        "src/db/queries/metadata.ts",
         "src/db/queries/stats.ts",
         "src/db/queries/templates.ts",
+        "src/db/queries/view-preferences.ts",
       ],
     },
   },
