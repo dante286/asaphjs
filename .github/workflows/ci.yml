@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Nothing in this workflow writes anything back. The build needs no token, no
+# DATABASE_URL and no provider credentials, which is what lets it run on pull
+# requests from forks — those get no secrets at all.
+permissions:
+  contents: read
+
+# A new push to a pull request supersedes that PR's own in-flight run. Runs on
+# main are never cancelled: GitHub scopes a cache written on a branch to that
+# branch, so the main runs are the ones whose caches later pull requests get to
+# restore from. Killing them to save a minute would cost every PR after it.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 24 to match the Dockerfile's `node:24-alpine`. A green check on a Node
+      # the image doesn't run would be worth very little.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      # Turbopack is the default bundler for `next build` in Next 16 and keeps
+      # its filesystem cache here, so the recipe in the bundled guide at
+      # node_modules/next/dist/docs/01-app/02-guides/ci-build-caching.md still
+      # applies. Two departures from it, both deliberate:
+      #
+      # It doesn't also cache ~/.npm — `setup-node` with `cache: npm` already
+      # owns that, and two actions writing one path is a race for no gain.
+      #
+      # The key hashes the build's actual inputs rather than the guide's
+      # `**/*.ts`, which would walk all of node_modules once it exists. Placed
+      # before `npm ci` as a second guard on the same thing.
+      - name: Restore the Next.js build cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.next/cache
+          key: >-
+            ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{
+            hashFiles('src/**', 'public/**', 'middleware.ts', 'next.config.ts', 'tsconfig.json') }}
+          # Source changed but dependencies didn't: rebuild from the newest
+          # cache for this lockfile instead of from nothing.
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
+
+      - name: Install
+        run: npm ci
+
+      # Each check is gated on the install, not on the check before it, so a
+      # lint failure can't hide a broken build — the same "which check failed"
+      # signal a four-job matrix gives, for one install.
+      #
+      # `!cancelled()` rather than `always()`: a superseded run should stop
+      # where it is, not grind through four more steps to tell nobody.
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: npm run lint
+
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: npm run typecheck
+
+      # No services, no env: the unit tier is the one that needs nothing set up.
+      - name: Unit tests
+        if: ${{ !cancelled() }}
+        run: npm test
+
+      - name: Build
+        if: ${{ !cancelled() }}
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+        run: npm run build
+
+  # The single check name branch protection requires. Adding a job above means
+  # adding it to `needs` here rather than editing repo settings again — and a
+  # required check that doesn't exist blocks every merge, which is the failure
+  # this indirection is here to prevent.
+  ci-required:
+    if: ${{ always() }}
+    needs: [verify]
+    runs-on: ubuntu-latest
+    steps:
+      # Anything that isn't success — failure, cancelled, skipped — is red.
+      # `always()` above means this job runs even when `verify` never did.
+      - name: Fail unless every job succeeded
+        run: |
+          echo "verify: ${{ needs.verify.result }}"
+          test "${{ needs.verify.result }}" = "success"

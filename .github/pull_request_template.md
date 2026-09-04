@@ -31,11 +31,12 @@ fill, cases left for a later pass, fields intentionally never auto-written.
 What you actually ran, with results — not what you intend to run. Name the
 commands and paste the counts/values that matter. If something was only checked
 at the layer below the UI, say so rather than implying an end-to-end run.
--->
 
-- [ ] `npx tsc --noEmit` clean
-- [ ] `npm run lint` clean
-- [ ] `npm run build` clean
+Lint, typecheck, unit tests and build are CI's job on every push to this branch,
+so don't restate them here. What belongs in this section is what CI can't see: a
+query run against a real database, a provider response you inspected, a count
+before and after, a case you exercised in the browser.
+-->
 
 ## Before merging
 
