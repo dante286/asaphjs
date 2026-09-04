@@ -51,7 +51,7 @@ async function getAppAccessToken(): Promise<string> {
   return cachedToken.value;
 }
 
-type IgdbGame = {
+export type IgdbGame = {
   id: number;
   name?: string;
   summary?: string;

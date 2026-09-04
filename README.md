@@ -125,9 +125,9 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | --- | --- |
 | `npm run dev` | Dev server |
 | `npm run build` / `npm run start` | Production build / serve |
-| `npm test` | Unit tests — needs no database, no network, no env (see below) |
+| `npm test` | Unit and provider tests — needs no database, no network, no env (see below) |
 | `npm run test:watch` | The same tests, re-running on change |
-| `npm run test:coverage` | Coverage over the pure-logic modules |
+| `npm run test:coverage` | Coverage over the tested modules |
 | `npm run db:generate` | Generate a Drizzle migration from schema changes |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema directly (no migration file — dev convenience) |
@@ -139,38 +139,85 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 
 ## Tests
 
-`npm test` runs Vitest over the pure-logic modules — the ones holding the decisions
-that are hard to check by eye. `buildPrefillPlan` deciding which provider values may
-overwrite an owner's own data, `guessColumnType` deciding what a CSV column *is*,
-`NAME_PATTERN` deciding which upload names can't escape the uploads directory, and
-`stripItemsForPublic` deciding what a stranger with a share link may see.
+`npm test` runs two Vitest projects, `unit` and `providers`. Both need **nothing set
+up**: no database, no network, no browser, no environment variables. Together they run in
+well under a second from a clean checkout. Vitest doesn't hand `.env` to `process.env`, so
+a machine with a full `.env` and a fresh clone behave identically.
 
-The property worth protecting is that this needs **nothing set up**: no database, no
-network, no browser, no environment variables. It runs in well under a second from a
-clean checkout. Vitest doesn't hand `.env` to `process.env`, so a machine with a full
-`.env` and a fresh clone behave identically; the two modules that do read env
-(`signupsAllowed`, `resolveLookupConfig`) stub it in both directions rather than
-inheriting whatever the developer happens to have exported.
+### The unit tier
 
-Tests are colocated as `*.test.ts` next to their subject, so an untested module is
-visible in a directory listing — except under `src/app/`, where the App Router matches
-files by convention and a stray sibling is asking for trouble. `vitest.config.mts` is a
-`projects` array with one project in it, leaving the seam for the tiers that need real
-infrastructure.
+The pure-logic modules — the ones holding the decisions that are hard to check by eye.
+`buildPrefillPlan` deciding which provider values may overwrite an owner's own data,
+`guessColumnType` deciding what a CSV column *is*, `NAME_PATTERN` deciding which upload
+names can't escape the uploads directory, and `stripItemsForPublic` deciding what a
+stranger with a share link may see. The two modules that do read env (`signupsAllowed`,
+`resolveLookupConfig`) stub it in both directions rather than inheriting whatever the
+developer happens to have exported.
 
-There's no DOM environment on purpose. Every page under `src/app/(app)` is an async
-Server Component, which Vitest can't render, so jsdom would buy a slower run and nothing
-else — components belong to an E2E suite. Coverage is reported over an allowlist of these
-modules rather than the whole tree, and carries no thresholds: the async query and
-network functions are uncovered by design here, so a whole-tree percentage would be a
-number about work this tier isn't doing.
+The rate limiter is here too, on fake timers, because its whole subject is a one-second
+refill window — including the footgun that `getLimiter` memoises by key and silently
+ignores the capacity of a second call for a key it already has. `withCache` is here as
+well, with `@/db/queries/metadata` mocked: its schema-stamp checks and its single-flight
+coalescing are decisions this module makes on its own, and four mocked functions are
+cheaper than a Postgres instance for them.
 
-Two tests are `skip`ped rather than deleted. Each holds the assertion that *should*
-pass, against a bug the suite turned up while being written: `timeAgo` renders days 360
-through 364 as "0 years ago" (#41), and `cloneTemplateFields` shares a select's `options`
+### The providers tier
+
+The three metadata providers, faked with [MSW](https://mswjs.io). MSW intercepts below
+`fetch`, so `igdb.ts`, `tmdb.ts` and `openlibrary.ts` run completely unmodified — real URL
+and header construction, real status handling, real parsing — and the specs assert on the
+request that came out the far end as well as on the fields that came back. What that
+protects is a pile of provider quirks otherwise recorded only as comments: IGDB's
+`t_thumb` cover URLs and Unix-**seconds** release dates, TMDB choosing between a v3 key
+and a v4 token by matching the credential's *shape*, Open Library's `-1` cover placeholder
+and its `form:manga` machine tags. Each is a silent-wrong-data bug if it regresses.
+
+**No credentials, and no way to need them.** `src/test/providers/setup.ts` deletes
+`IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET` and `TMDB_API_KEY` from `process.env` before any
+provider module is imported and installs obvious fakes in their place, so a runner that
+did have real ones can't leak them into a call. MSW then runs with
+`onUnhandledRequest: "error"`, which is what makes the hermetic claim enforceable rather
+than aspirational: any request no handler claims **fails the test**. Repointing TMDB's
+base URL at an unmocked host, to check that, failed 17 of its 24 tests instead of reaching
+the network — the 7 that still passed are the ones that make no request at all.
+
+The fixtures are hand-authored against each provider's own declared response types
+(`IgdbGame`, `TmdbSearchResult`, `OpenLibraryDoc`, `OpenLibraryWork`) with `satisfies`, so
+a change to a provider's types breaks the fixture rather than letting it drift into
+fiction. None of it is recorded traffic, which is why none of it needed a key to produce.
+`npm run lookup:check` still runs against the *real* providers and remains the only thing
+that can catch a provider changing its response shape on us — MSW fixtures by construction
+cannot.
+
+This tier also replaces `rate-limiter.ts` with a pass-through. Every provider builds its
+limiter at module load, and Open Library's is capacity 1 refilling once a second while its
+`hydrate` makes up to five requests — one unmitigated test would spend four seconds of
+wall clock for no signal about anything this tier tests.
+
+### Conventions
+
+Tests are colocated as `*.test.ts` next to their subject, so an untested module is visible
+in a directory listing — except under `src/app/`, where the App Router matches files by
+convention and a stray sibling is asking for trouble. Which tier a spec belongs to follows
+from where it lives: everything under `src/lib/metadata/providers/` is the providers tier,
+everything else the unit tier. The shared MSW plumbing sits in `src/test/providers/`.
+
+There's no DOM environment on purpose. Every page under `src/app/(app)` is an async Server
+Component, which Vitest can't render, so jsdom would buy a slower run and nothing else —
+components belong to an E2E suite. Coverage is reported over an allowlist of the tested
+modules rather than the whole tree, and carries no thresholds: the route handlers, server
+actions and query functions are uncovered by design here, so a whole-tree percentage would
+be a number about work these tiers aren't doing. The three providers, `cached-provider.ts`
+and `rate-limiter.ts` are at 100% of statements, branches, functions and lines.
+
+Three bugs the suite turned up while being written are held as `skip`ped tests rather
+than deleted, each one the assertion that *should* pass: `timeAgo` renders days 360
+through 364 as "0 years ago" (#41), `cloneTemplateFields` shares a select's `options`
 array with the template row it copied, which is the exact thing its comment says it
-prevents (#42 — latent, since nothing calls it yet). Both are behaviour changes, so
-they're tracked on their own rather than folded in here.
+prevents (#42 — latent, since nothing calls it yet), and a TMDB source id with an empty
+id half (`"movie:"`) slips past `decodeSourceId` because `Number("")` is 0, spending a
+request to reject something the guard exists to reject for free (#44). All three are
+behaviour changes, so they're tracked on their own rather than folded in here.
 
 ## What's implemented
 

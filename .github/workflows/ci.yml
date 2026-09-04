@@ -72,8 +72,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run typecheck
 
-      # No services, no env: the unit tier is the one that needs nothing set up.
-      - name: Unit tests
+      # No services, no env, no provider credentials: both tiers `npm test` runs
+      # are the ones that need nothing set up. The provider tier fakes its HTTP
+      # with MSW and fails on any request no handler claims, so this step can't
+      # start reaching the internet without the workflow going red.
+      - name: Unit and provider tests
         if: ${{ !cancelled() }}
         run: npm test
 

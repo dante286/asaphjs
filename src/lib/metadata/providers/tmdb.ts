@@ -48,7 +48,7 @@ function authorize(path: string): { url: string; headers: Record<string, string>
 
 type TmdbMediaType = "movie" | "tv";
 
-type TmdbSearchResult = {
+export type TmdbSearchResult = {
   id: number;
   media_type?: TmdbMediaType | "person";
   title?: string; // movie
@@ -58,7 +58,7 @@ type TmdbSearchResult = {
   poster_path?: string | null;
 };
 
-type TmdbDetail = {
+export type TmdbDetail = {
   title?: string;
   name?: string;
   overview?: string;
