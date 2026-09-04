@@ -283,6 +283,12 @@ credentials at all** — 401 without a session, 400 for an unknown provider or a
 two characters, 503 for a provider with no key configured, 502 by pointing MSW at a 500 —
 which is a property of how `isProviderConfigured` was written rather than a coincidence.
 
+This tier also stands MSW up beside Postgres, which is what makes the metadata cache
+testable at all: it needs the rows on one side and a way to count outbound requests on the
+other. The cache spec asserts its claims in requests spent rather than in rows written,
+because a hit and a miss return the same fields — see "Staying inside the free tier" below
+for what it checks and how it divides labour with `npm run lookup:check`.
+
 CI runs all of this as its own job against a `postgres:18-alpine` service container with no
 secrets, and applies the migrations to an empty database as a separate step before any spec
 runs — nothing else proves `drizzle/migrations/meta/_journal.json` is consistent with the
@@ -646,11 +652,25 @@ optimization:
 - Searches only ever run on an explicit click — never as-you-type — and the query field is
   pre-filled with the item's title, so the common case is one request per item, ever.
 
-`npm run lookup:check` proves this by counting outbound requests around each call rather
-than trusting a cache row exists: cold search 1 request, warm 0, five concurrent identical
-searches 1, cold hydrate ≥1 (Open Library's reads three records, IGDB's and TMDB's one),
-warm 0, `forceRefresh` ≥1, and a row stamped with an older schema version refetches. It
-purges only the rows for the query it tests. Takes a provider and query:
+Two things check this, and the difference between them is the point.
+
+`src/lib/metadata/cached-provider.db.test.ts` runs on every pull request. It counts the
+requests that actually leave the process — through the real registry, the real provider
+code and real rows, with MSW answering the HTTP and Postgres holding the cache — and
+asserts each claim above in requests spent: cold search 1, warm 0, five concurrent
+identical searches 1, cold hydrate exactly what that provider's records cost (three for
+Open Library, one for IGDB), warm 0, `forceRefresh` spends again, a row a minute short of
+the 30-day TTL is served and a minute past it is refetched, an empty result is cached, and
+a row stamped with an older schema version refetches *and is written back*. A cache hit
+and a cache miss return identical fields, so the request count is the only thing that can
+tell them apart.
+
+`npm run lookup:check` does the same seven checks against the real provider, with real
+credentials, and prints them for a human. It is not redundant: those MSW fixtures are ours,
+written against types we declared, so by construction they cannot notice TMDB changing a
+field name. The spec guards against our regressions; the script guards against a provider's,
+and it is the thing to reach for when a lookup starts misbehaving on a real instance. It
+purges only the rows for the query it tests, and takes a provider and query:
 `npm run lookup:check -- tmdb "dune"`.
 
 ## Item photos

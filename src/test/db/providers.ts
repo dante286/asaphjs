@@ -3,6 +3,7 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import sharp from "sharp";
 import { handlers } from "@/test/providers/handlers";
+import { recordRequestsFrom, resetRecordedRequests } from "@/test/providers/requests";
 
 /**
  * Some of what this tier tests reaches provider code: the items POST route
@@ -46,10 +47,19 @@ export function interceptProviderNetwork(): void {
   beforeAll(async () => {
     coverBytes = await tinyPng();
     server.listen({ onUnhandledRequest: "error" });
+    /**
+     * The same recorder the providers tier installs, on this tier's own server.
+     * `onUnhandledRequest: "error"` already proves nothing escapes to the
+     * internet; this is for the specs that need to know how many requests went
+     * out — which is the only way to see a cache actually sparing a free tier,
+     * since a served row and a refetched one both return the same fields.
+     */
+    recordRequestsFrom(server);
   });
 
   afterEach(() => {
     server.resetHandlers();
+    resetRecordedRequests();
   });
 
   afterAll(() => {
