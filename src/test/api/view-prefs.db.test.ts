@@ -14,8 +14,8 @@ import { apiRequest, routeContext } from "@/test/db/http";
  *
  * The other part is who is let in at all. A viewer may store a layout — being
  * read-only about a shelf is not being read-only about how you look at it —
- * while a share-link caller is refused, despite a branch in the route that
- * reads as though it wouldn't be (#47).
+ * while a caller with no session of their own, share token or not, has no id to
+ * key a layout on and is refused.
  */
 
 const SHARE_TOKEN = "tok_prefs_spec";
@@ -87,17 +87,11 @@ describe("GET", () => {
     });
   });
 
-  it("refuses a public caller", async () => {
-    /**
-     * The route reads as though a share-link caller gets defaults back — there
-     * is a `!guard.userId` branch and a comment about not erroring in the UI.
-     * It can't run: `public` isn't in this route's `allowed` list, so the guard
-     * refuses first, and no signed-in role ever has a null userId. Nothing
-     * public calls this route either (the share page renders its table with
-     * empty prefs), so this asserts what actually happens. Tracked as #47.
-     */
-    await patch({ columnWidths: { title: 320 } });
-
+  it("refuses a share-link caller", async () => {
+    // `public` is left out of this route's `allowed` list on purpose: a share
+    // token identifies a collection, not a person, so there is nobody to read a
+    // layout back for. The share page renders its table with empty prefs and
+    // never calls here.
     expect((await get({ cookie: undefined, token: SHARE_TOKEN })).status).toBe(403);
   });
 
@@ -131,9 +125,9 @@ describe("PATCH", () => {
     });
   });
 
-  it("refuses a public caller's patch, and writes nothing", async () => {
-    // Same dead branch as on GET (#47). What matters either way is that a
-    // share token can't write a layout — and it doesn't.
+  it("refuses a share-link caller's patch, and writes nothing", async () => {
+    // Refused at the guard, so nothing downstream gets a chance to key a write
+    // on the wrong person — the owner's stored layout is untouched.
     const response = await patch(
       { columnWidths: { title: 999 } },
       { cookie: undefined, token: SHARE_TOKEN },
