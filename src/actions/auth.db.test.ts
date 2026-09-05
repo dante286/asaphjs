@@ -75,14 +75,30 @@ describe("signInAction", () => {
   });
 
   it("falls back to the dashboard when there was nowhere to go back to", async () => {
-    // Someone who opened /auth directly rather than being bounced there. The
-    // action reads `next` as `""` in that case, which is why it is `next || "/"`
-    // and not `next ?? "/"` — the empty string is the common path, not the odd one.
+    // Someone who opened /auth directly rather than being bounced there, so the
+    // form submits `next` as "". The common path, not the odd one.
     const digest = await redirectFrom(
       actions.signInAction(undefined, form({ email: owner.email, password: TEST_PASSWORD })),
     );
 
     expect(digest).toBe("NEXT_REDIRECT;replace;/;307;");
+  });
+
+  it("will not be talked into landing on another origin", async () => {
+    // `safeNext` has its own unit tests for the spellings; this is the one that
+    // proves it is actually in the path, on the far side of a real successful
+    // sign-in. That combination is the whole point of the bug — the redirect
+    // fires when the person has just proven they trust this page.
+    for (const elsewhere of ["https://elsewhere.example/login", "//elsewhere.example", "/\\elsewhere.example"]) {
+      const digest = await redirectFrom(
+        actions.signInAction(
+          undefined,
+          form({ email: owner.email, password: TEST_PASSWORD, next: elsewhere }),
+        ),
+      );
+
+      expect(digest).toBe("NEXT_REDIRECT;replace;/;307;");
+    }
   });
 
   it("turns a wrong password into a message rather than a throw", async () => {

@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
 import { auth } from "@/lib/auth/auth";
+import { safeNext } from "@/lib/auth/safe-next";
 
 export type AuthActionState = { error?: string } | undefined;
 
@@ -13,7 +14,9 @@ export async function signInAction(
 ): Promise<AuthActionState> {
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
-  const next = String(formData.get("next") ?? "/");
+  // Attacker-supplied: it arrives on the query string and rides through the
+  // form as a hidden input. See `safeNext` for what that buys someone.
+  const next = safeNext(String(formData.get("next") ?? "/"));
 
   try {
     await auth.api.signInEmail({ body: { email, password } });
@@ -22,7 +25,7 @@ export async function signInAction(
     return { error: "Sign in failed. Please try again." };
   }
 
-  redirect(next || "/");
+  redirect(next);
 }
 
 export async function signUpAction(
