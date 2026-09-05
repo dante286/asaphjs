@@ -126,6 +126,19 @@ updates:
     open-pull-requests-limit: 2
     labels:
       - infra
+    ignore:
+      # Stay on the Node 24 LTS line. The odd-numbered majors are never LTS at
+      # all, and an even one is only worth moving to once it has actually
+      # entered its LTS window — a decision made deliberately, alongside the
+      # three `node-version: 24` lines in ci.yml and the two in README.md that
+      # Dependabot cannot see.
+      #
+      # The tag here is `24-alpine`, with no minor or patch in it, so a major is
+      # the only update this ecosystem could ever propose for node. Ignoring it
+      # silences the node bumps entirely, which is the intent; when the time
+      # comes to move lines, drop this block or bump the Dockerfile by hand.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
 
   # ---- Docker Compose ----
   #
