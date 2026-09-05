@@ -34,14 +34,7 @@ describe("cloneTemplateFields", () => {
     expect(cloneTemplateFields([])).toEqual([]);
   });
 
-  // Skipped, not deleted: the copy is one level deep, so a select's `options`
-  // array is still shared with the template row it came from and editing a
-  // collection's own options mutates the template in memory — which is exactly
-  // what the function's comment says it prevents. Latent rather than live:
-  // nothing calls this function yet, which is half of what #42 has to settle
-  // (fix it and wire it in, or delete it). This is the assertion that should
-  // pass if it stays.
-  it.skip("gives a select its own options array", () => {
+  it("gives a select its own options array", () => {
     const source = template();
     const cloned = cloneTemplateFields(source);
 
