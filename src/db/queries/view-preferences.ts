@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { viewPreferences } from "@/db/schema";
 
@@ -42,7 +42,9 @@ export async function upsertViewPreferences(
     .values({ userId, collectionId, columnWidths, hiddenColumns })
     .onConflictDoUpdate({
       target: [viewPreferences.userId, viewPreferences.collectionId],
-      set: { columnWidths, hiddenColumns, updatedAt: new Date() },
+      // Database clock, as everywhere else this column is written — see the
+      // note on `touchedNow` in collections.ts.
+      set: { columnWidths, hiddenColumns, updatedAt: sql`now()` },
     })
     .returning();
 

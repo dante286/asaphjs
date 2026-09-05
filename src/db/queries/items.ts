@@ -155,7 +155,9 @@ export async function patchItem(
 
     const [updated] = await tx
       .update(items)
-      .set({ ...fixed, values: valuesExpr, updatedAt: new Date() })
+      // The database's clock, matching the column's `defaultNow()` on insert —
+      // see the note on `touchedNow` in collections.ts for why not `new Date()`.
+      .set({ ...fixed, values: valuesExpr, updatedAt: sql`now()` })
       .where(eq(items.id, itemId))
       .returning();
 

@@ -14,6 +14,18 @@ export type CollectionCardRow = {
   lentCount: number;
 };
 
+/**
+ * `updated_at` on write. The database's clock rather than the app's: the column
+ * defaults to `now()` on insert, so writing `new Date()` on update ordered one
+ * column against two clocks — Node's, truncated to the millisecond, and
+ * Postgres's, at microseconds. An update landing in the same millisecond as a
+ * later row's insert therefore sorted *below* it, which is what made
+ * "puts the most recently updated collection first" fail intermittently in CI
+ * and never locally. Across separate app and database hosts the same mismatch
+ * is skew rather than truncation, and the shelf grid is ordered on this column.
+ */
+const touchedNow = sql`now()`;
+
 /** One grouped query: every collection the user owns or has accepted access to, with counts. */
 export async function listCollectionsForUser(userId: string): Promise<CollectionCardRow[]> {
   const rows = await db
@@ -242,7 +254,7 @@ export async function createCollection(params: {
 export async function updateCollectionFields(id: string, fields: FieldDef[]) {
   const [row] = await db
     .update(collections)
-    .set({ fields, updatedAt: new Date() })
+    .set({ fields, updatedAt: touchedNow })
     .where(eq(collections.id, id))
     .returning();
   return row;
@@ -266,7 +278,7 @@ export async function updateCollectionSettings(
   const write = async (slug?: string) => {
     const [row] = await db
       .update(collections)
-      .set({ ...patch, ...(slug ? { slug } : {}), updatedAt: new Date() })
+      .set({ ...patch, ...(slug ? { slug } : {}), updatedAt: touchedNow })
       .where(eq(collections.id, id))
       .returning();
     return row;

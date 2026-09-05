@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listSystemTemplates } from "@/db/queries/templates";
+import { cloneTemplateFields, listSystemTemplates } from "@/db/queries/templates";
 import { CreateCollectionWizard } from "@/components/create-collection/CreateCollectionWizard";
 
 export default async function NewCollectionPage() {
@@ -28,7 +28,16 @@ export default async function NewCollectionPage() {
       </p>
 
       <CreateCollectionWizard
-        templates={templates.map((t) => ({ key: t.key, name: t.name, fields: t.fields }))}
+        // Cloned rather than handed over as-is: these are the shared system
+        // template rows, and the wizard's copy of them becomes the new
+        // collection's own fields. The RSC boundary happens to serialize them
+        // on the way to the client, but that is a property of the boundary
+        // rather than a guarantee this path is entitled to rely on.
+        templates={templates.map((t) => ({
+          key: t.key,
+          name: t.name,
+          fields: cloneTemplateFields(t.fields),
+        }))}
       />
     </div>
   );
