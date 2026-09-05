@@ -25,3 +25,11 @@ vitest.config.mts
 coverage
 src/test
 **/*.test.ts
+
+# ...and the smoke tier, which is even further outside the image: it drives the
+# built container from the runner, so nothing here is ever run inside one.
+playwright.config.ts
+tests
+playwright-report
+test-results
+scripts/e2e
