@@ -150,13 +150,180 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run test:db
 
+  # The tier that needs the image. Everything above proves the source is
+  # consistent; this is the only job that proves the artifact we would actually
+  # ship runs.
+  #
+  # Why not `next start` and a browser, which would be far cheaper: it serves
+  # from the full `node_modules`, where libvips is present whatever the build's
+  # tracer decided. The bug this job exists for — a photo route that throws
+  # ERR_DLOPEN_FAILED because `libvips-cpp.so.*` fell out of the standalone
+  # trace, on a build and typecheck that were both clean — cannot reproduce
+  # there. Only the standalone output, or an image built from it, can fail the
+  # way production fails.
+  #
+  # The build and the browser run share one job. `load: true` puts the image in
+  # this runner's Docker daemon, and a separate job couldn't see it without
+  # exporting a ~400MB tarball and round-tripping it through artifact upload and
+  # download — which costs about what the browser run costs in the first place.
+  # Folding them together is what makes running this on pull requests worth it.
+  docker-e2e:
+    runs-on: ubuntu-latest
+
+    env:
+      # The runner's view of the database, for the migrate and seed steps. The
+      # app container gets a different address for the same server (`asaph-db`,
+      # below), which is the one thing a `services:` block couldn't give us —
+      # see the note on the network.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/asaph
+      IMAGE: asaphjs:e2e
+      E2E_BASE_URL: http://127.0.0.1:3000
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Postgres by hand rather than as a `services:` container, which is what
+      # the integration job uses. A service container is reachable from the
+      # runner as 127.0.0.1 but is not on a network the app container can name,
+      # so wiring the two together would mean `--network host` and an assumption
+      # about the runner's Docker being rootful and sharing the host's network
+      # namespace. A user-defined network makes both halves explicit — the
+      # runner talks to the published port, the app talks to `asaph-db` — and
+      # behaves the same on a developer's machine, where Docker often runs in a
+      # VM and `--network host` reaches nothing.
+      #
+      # Same image docker-compose.yml and the integration job pin, so all three
+      # run against the same server.
+      - name: Start Postgres
+        run: |
+          docker network create asaph-e2e
+          docker run -d --name asaph-db --network asaph-e2e -p 5432:5432 \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=asaph \
+            postgres:18-alpine
+          for attempt in $(seq 1 30); do
+            if docker exec asaph-db pg_isready -U postgres > /dev/null 2>&1; then
+              echo "postgres ready after ${attempt}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::postgres never became ready"
+          docker logs asaph-db
+          exit 1
+
+      # The image carries no drizzle-kit and doesn't migrate at boot, so the
+      # schema and the system templates go in from the checkout, before the
+      # container starts. Without the seed there are no templates and the
+      # create-collection wizard these specs drive has nothing to click.
+      #
+      # `drizzle.config.ts` and the seed script both read `.env.local`, which
+      # doesn't exist in a checkout; dotenv doesn't overwrite an already-set
+      # variable, so the DATABASE_URL above wins and the missing file is a
+      # silent no-op.
+      - name: Migrate and seed the database
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      # Only the browser binary is cached. Its system libraries are apt packages
+      # that land outside any cached path, so `install-deps` runs either way —
+      # cheap on a hit, and skipping it is how a cached browser fails to launch.
+      - name: Restore the Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium's system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - uses: docker/setup-buildx-action@v4
+
+      # No NEXT_PUBLIC_BETTER_AUTH_URL build argument, deliberately — that
+      # matches what the release workflow publishes, so this run doubles as the
+      # regression test for that decision. Sign-in and sign-up are Server
+      # Actions and need no client-side base URL; anything that grew a
+      # dependency on one would fail here rather than in a deployment.
+      - name: Build the image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha
+          # A pull request from a fork gets a read-only Actions cache, where an
+          # export is an error rather than a missed optimisation.
+          cache-to: type=gha,mode=max,ignore-error=true
+
+      # The provider credentials are pinned empty rather than left unset, which
+      # is the state lookup-degrades.spec.ts asserts on. Open Library needs no
+      # key and so can't be switched off this way — no spec may use a template
+      # that resolves to it, or CI starts calling openlibrary.org for real.
+      - name: Start the container
+        run: |
+          docker run -d --name asaph-e2e --network asaph-e2e -p 3000:3000 \
+            -e DATABASE_URL=postgresql://postgres:postgres@asaph-db:5432/asaph \
+            -e BETTER_AUTH_SECRET=ci-smoke-secret-not-used-anywhere-real \
+            -e ALLOW_SIGNUPS=true \
+            -e IGDB_CLIENT_ID= \
+            -e IGDB_CLIENT_SECRET= \
+            -e TMDB_API_KEY= \
+            "$IMAGE"
+
+      - name: Wait for it to answer
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS -o /dev/null "$E2E_BASE_URL/auth"; then
+              echo "answered after ${attempt}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the container never answered on $E2E_BASE_URL"
+          docker logs asaph-e2e
+          exit 1
+
+      - name: Smoke tests
+        run: npx playwright test
+
+      # A crash inside the container reaches the specs as a 500 with no
+      # explanation; the stack trace is only here. Printed before the report
+      # upload so it lands in the log of the job that failed.
+      - name: Container logs
+        if: failure()
+        run: docker logs asaph-e2e
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   # The single check name branch protection requires. Adding a job above means
   # adding it to `needs` here rather than editing repo settings again — and a
   # required check that doesn't exist blocks every merge, which is the failure
   # this indirection is here to prevent.
   ci-required:
     if: ${{ always() }}
-    needs: [verify, integration]
+    needs: [verify, integration, docker-e2e]
     runs-on: ubuntu-latest
     steps:
       # Anything that isn't success — failure, cancelled, skipped — is red.
@@ -165,5 +332,7 @@ jobs:
         run: |
           echo "verify: ${{ needs.verify.result }}"
           echo "integration: ${{ needs.integration.result }}"
+          echo "docker-e2e: ${{ needs.docker-e2e.result }}"
           test "${{ needs.verify.result }}" = "success"
           test "${{ needs.integration.result }}" = "success"
+          test "${{ needs.docker-e2e.result }}" = "success"

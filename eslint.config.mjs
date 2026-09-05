@@ -16,6 +16,10 @@ const eslintConfig = defineConfig([
     // their own eslint-disable directives. Flat config doesn't read .gitignore,
     // so without this a coverage run leaves `npm run lint` dirty.
     "coverage/**",
+    // Same problem, same reason: a failed `npm run test:e2e` leaves a generated
+    // HTML report and a trace bundle behind.
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 

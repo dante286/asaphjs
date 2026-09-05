@@ -128,7 +128,9 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 | `npm test` | Unit and provider tests — needs no database, no network, no env (see below) |
 | `npm run test:watch` | The same tests, re-running on change |
 | `npm run test:db` | Integration tests against real Postgres — needs `docker compose up -d db` |
-| `npm run test:coverage` | Coverage over the tested modules (runs all three tiers, so it needs the database too) |
+| `npm run test:coverage` | Coverage over the tested modules (runs all three Vitest tiers, so it needs the database too) |
+| `npm run test:e2e` | Smoke tests in a browser against the standalone build — needs `npm run build` first |
+| `npm run test:e2e:ui` | The same four specs in Playwright's UI mode, for writing or debugging one |
 | `npm run db:generate` | Generate a Drizzle migration from schema changes |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema directly (no migration file — dev convenience) |
@@ -140,16 +142,20 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
 
 ## Tests
 
-Three Vitest projects. `npm test` runs `unit` and `providers`, which need **nothing set
-up**: no database, no network, no browser, no environment variables. Together they run in
-well under a second from a clean checkout. Vitest doesn't hand `.env` to `process.env`, so
-a machine with a full `.env` and a fresh clone behave identically.
+Four tiers, three of them Vitest projects. `npm test` runs `unit` and `providers`, which
+need **nothing set up**: no database, no network, no browser, no environment variables.
+Together they run in well under a second from a clean checkout. Vitest doesn't hand `.env`
+to `process.env`, so a machine with a full `.env` and a fresh clone behave identically.
 
 `npm run test:db` runs the third, `integration`, against a real Postgres — one
-`docker compose up -d db` away, and the only tier that asks for anything. It's named
-explicitly rather than excluded from `npm test`: a tier that needs infrastructure has to
-opt *in*, or the promise that `npm test` works from a clean checkout lasts exactly until
-someone adds a tier.
+`docker compose up -d db` away. `npm run test:e2e` runs the fourth, `smoke`, in a browser
+against the standalone build. Both are named explicitly rather than excluded from
+`npm test`: a tier that needs infrastructure has to opt *in*, or the promise that
+`npm test` works from a clean checkout lasts exactly until someone adds a tier.
+
+The tiers are ordered by what they cost to write, run and debug, and each one is meant to
+hold only what the cheaper tier below it genuinely can't. That's why the smoke tier has
+four specs and not forty.
 
 ### The unit tier
 
@@ -294,6 +300,84 @@ secrets, and applies the migrations to an empty database as a separate step befo
 runs — nothing else proves `drizzle/migrations/meta/_journal.json` is consistent with the
 files beside it.
 
+### The smoke tier
+
+Four Playwright specs in `tests/e2e/`, Chromium only, against a server that is either the
+standalone build or the container image itself. They are the most expensive tests here by
+every measure, so they hold only the four assertions that cannot live anywhere cheaper.
+
+**`next start` would be a false pass, and so would half the obvious alternatives.** The
+failure this tier exists for is a build that succeeds and then throws: standalone tracing
+follows JS and `.node` binaries but not the shared library one of those binaries `dlopen`s,
+so `@img/sharp-<platform>/lib/*.node` gets traced and
+`@img/sharp-libvips-<platform>/lib/libvips-cpp.so.*` is left behind, and the photo routes
+die with `ERR_DLOPEN_FAILED` on a build and typecheck that were both clean. `next start`
+serves from the full `node_modules`, where libvips is present whatever the tracer decided,
+so it cannot reproduce this at all.
+
+Running `.next/standalone/server.js` in place can't either, for the same reason one
+directory deeper: Node walks up out of `.next/standalone/node_modules` into the repo's real
+`node_modules` and finds the whole install. `scripts/e2e/standalone-server.mjs` therefore
+copies the output to a staging directory outside the tree first, and copies it
+*dereferencing symlinks* — Turbopack leaves relative links in `.next/node_modules`
+(`sharp-<hash>` -> `../../node_modules/sharp`) that Docker's `COPY` keeps relative and
+resolves inside `/app`, while Node's `fs.cp` rewrites them to absolute paths back into the
+source tree, which quietly restores the fallback the staging was there to remove. With
+that closed, deleting `@img` from the traced output turns the photo spec red, locally and
+in an image alike.
+
+What the four specs cover:
+
+- **The photo upload.** Uploads an image, asserts the cover resolves to
+  `/api/uploads/<id>.webp`, and fetches both that URL and its `_t` thumbnail expecting 200,
+  `image/webp`, and a `RIFF`/`WEBP` container signature — the header alone proves nothing,
+  since the route derives it from a filename the store hardcodes. One upload settles that
+  sharp loaded inside the trace, that the re-encode ran, that the thumbnail pair was
+  written, that `UPLOADS_DIR` is honoured, and that the read route serves from outside
+  `public/`. The thumbnail's body has to be *smaller* than the full-size one, because the
+  read route falls back to the full file for a `_t` name that isn't on disk and a missing
+  thumbnail would otherwise look like a pass.
+- **The public share page redacts.** Creates an item with a distinctive borrower and notes,
+  enables the link, and opens it in a fresh unauthenticated context. `stripItemsForPublic`
+  has a unit test; this proves it's applied on the rendered path. The assertion is against
+  the page *source*, not its text: the collection defaults to table view, `TableView` is a
+  Client Component, and its rows are serialized into the RSC payload whether or not a given
+  column is on screen. Both needles are plain ASCII, since an escaped apostrophe would make
+  `not.toContain` pass for the wrong reason.
+- **The middleware redirect.** `middleware.ts` is imported by nothing and appears in no
+  trace anyone reads; a build that dropped it would be green everywhere else while leaving
+  every protected page open. Includes the counterpart — `/s/:token` still answers signed
+  out, which is why the matcher is a list rather than a catch-all.
+- **Missing provider keys degrade quietly.** The server runs with no IGDB or TMDB
+  credentials: no lookup panel in either the create dialog or the detail page, and item
+  creation still works. The end-to-end form of the constraint the whole strategy is built
+  around.
+
+Open Library needs no credentials, so `isProviderConfigured("openlibrary")` is permanently
+true and a Books, Comics, Manga or Strategy Guides collection renders a live lookup panel
+that would hit the real openlibrary.org from CI. **Every spec uses the Video Games
+template**, which resolves to IGDB and has no keys here. The local server script blanks
+`IGDB_*` and `TMDB_API_KEY` rather than inheriting them, so a developer with real keys in
+`.env.local` doesn't fail the fourth spec and start spending their own quota on every run.
+
+Each spec signs up its own throwaway account, which is what lets workers run in parallel
+against one database. No visual regression testing and no cross-browser matrix. Nothing a
+route or query test could answer more cheaply — no role matrices, no `If-Match` conflicts,
+no CSV import; those are in the integration tier already.
+
+CI runs this as `docker-e2e`, which builds the image without pushing it and drives the
+running container. The build and the browser run share one job on purpose: `load: true`
+puts the image in that runner's Docker daemon, and a separate job couldn't see it without
+round-tripping a ~400MB tarball through artifact upload and download, which costs about
+what the browser run costs in the first place. Postgres is a plain container on a
+user-defined network rather than a `services:` block, because the app container has to
+reach it by name while the migrate and seed steps reach it on a published port — the
+alternative is `--network host` and an assumption about the runner's Docker that doesn't
+hold on a laptop. The image is built with **no** `NEXT_PUBLIC_BETTER_AUTH_URL` build
+argument, matching what a release would publish, so the run doubles as the regression test
+for that decision. The container's log is printed on failure: a missing native library
+reaches the specs as a dialog that never closed, and the reason is only in there.
+
 ### Conventions
 
 Tests are colocated as `*.test.ts` next to their subject, so an untested module is visible
@@ -305,15 +389,18 @@ next to their subject like everything else.
 
 Which tier a spec belongs to follows from where it lives or what it's called: everything
 under `src/lib/metadata/providers/` is the providers tier, `*.db.test.ts` anywhere is the
-integration tier, everything else is the unit tier. The naming rather than a directory for
-the last one, because a module often has both kinds — a pure function worth testing with
-nothing running next to code that needs a server (`slugify` beside `withFreshSlug`,
+integration tier, `tests/e2e/*.spec.ts` is the smoke tier — the one that sits outside `src/`
+entirely, because it drives a running server rather than importing anything — and everything
+else is the unit tier. The naming rather than a directory for that last one, because a
+module often has both kinds — a pure function worth testing with nothing running next to
+code that needs a server (`slugify` beside `withFreshSlug`,
 `stripItemsForPublic` beside `patchItem`). Shared plumbing sits in `src/test/providers/` and
 `src/test/db/`.
 
-There's no DOM environment on purpose. Every page under `src/app/(app)` is an async Server
-Component, which Vitest can't render, so jsdom would buy a slower run and nothing else —
-components belong to an E2E suite. Coverage is reported over an allowlist of the tested
+There's no DOM environment in any Vitest project, on purpose. Every page under
+`src/app/(app)` is an async Server Component, which Vitest can't render, so jsdom would buy
+a slower run and nothing else — the components are the smoke tier's business, in a real
+browser, and only where a component is the only place an assertion can live. Coverage is reported over an allowlist of the tested
 modules rather than the whole tree, and carries no thresholds: React components are
 uncovered by design here, so a whole-tree percentage would be a number about work these
 tiers aren't doing. Across that allowlist — the providers, the query layer, the route
