@@ -1,0 +1,150 @@
+# Version updates only. Dependabot *alerts* and *security updates* are separate
+# switches in the repository's own settings and cannot be turned on from a file
+# in the tree — see the pull request that added this.
+#
+# Nothing here auto-merges. Every other change in this repo is reviewed by hand
+# and a dependency bump is not the one exception worth making, least of all
+# while CI is this young.
+version: 2
+
+updates:
+  # ---- npm ----
+  #
+  # Several dependencies here are pinned exact and cannot move independently, so
+  # the grouping below matters more than the schedule does. Ungrouped, this
+  # ecosystem would open a pull request that breaks lint (Next without
+  # eslint-config-next) roughly as often as one that doesn't.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - infra
+    # `next`, `react`, `react-dom` and `eslint-config-next` are pinned exact
+    # rather than caret-ranged. The default `auto` strategy would try to widen a
+    # range that doesn't exist and leave the pin alone; `increase` rewrites the
+    # pinned version itself, which is the only thing that can actually move
+    # these four.
+    versioning-strategy: increase
+
+    # A dependency lands in the FIRST group it matches, so the catch-all has to
+    # come last. Anything matching no group — a major of something not named
+    # here, such as the @types/node bump discussed below — arrives as its own
+    # pull request, which is what a major deserves.
+    groups:
+      next:
+        # eslint-config-next reaches into Next's internals and is pinned to the
+        # same exact version. A bump to either one alone is a red lint run, so
+        # they have to arrive in a single pull request.
+        patterns:
+          - next
+          - eslint-config-next
+          - "@next/*"
+      react:
+        # react and react-dom are pinned to the same exact version and are not
+        # independently upgradable; the @types packages track the same major.
+        # Majors are ignored below — see the ignore block.
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+      drizzle:
+        # drizzle-kit generates the migration format drizzle-orm consumes.
+        # Split across two pull requests, whichever merges first is briefly
+        # paired with a version of the other it wasn't tested against.
+        patterns:
+          - drizzle-orm
+          - drizzle-kit
+      testing:
+        # Not a compatibility constraint, just noise control: the test tooling
+        # releases often and a bump to it can only ever break CI, never
+        # production.
+        patterns:
+          - vitest
+          - "@vitest/*"
+          - "@playwright/test"
+          - msw
+      minor-and-patch:
+        # Everything else, so a quiet week is one pull request rather than nine.
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+    ignore:
+      # React's major is chosen by Next, not by this project. A React 20 pull
+      # request that lands before Next supports it is unmergeable noise; when
+      # Next does support it, the bump arrives with the Next upgrade and gets
+      # done by hand.
+      #
+      # Deliberately NOT ignored: @types/node, pinned at ^20 while both the
+      # Dockerfile and CI run Node 24. That mismatch wants closing, not
+      # suppressing, so its major is allowed through.
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
+
+  # ---- GitHub Actions ----
+  #
+  # Scans .github/workflows regardless of what `directory` says; `/` is the
+  # required value, not a path that gets searched.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - infra
+    groups:
+      # These move together often enough — a checkout/setup-node/cache trio at
+      # three call sites each — that one pull request a week beats three.
+      actions:
+        patterns:
+          - "*"
+
+  # ---- Docker ----
+  #
+  # This ecosystem reads Dockerfiles only. It sees `node:24-alpine` and nothing
+  # else; the Postgres tag lives in docker-compose.yml and is handled by the
+  # block below.
+  #
+  # A Node major arriving here edits the Dockerfile alone — `node-version: 24`
+  # is written out again in ci.yml, which Dependabot has no way to connect to
+  # this. Such a pull request is only half the change.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    labels:
+      - infra
+
+  # ---- Docker Compose ----
+  #
+  # A separate ecosystem from `docker`, and the only thing that will ever look
+  # at docker-compose.yml. Comparatively new: if the config validation on the
+  # Insights tab rejects this block, delete it and bump Postgres by hand rather
+  # than leaving a config that fails to parse.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    labels:
+      - infra
+    ignore:
+      # A Postgres major is a pg_upgrade or a dump-and-restore on every
+      # deployment, not a tag edit. This project already ate one data path
+      # change going to 18 — the volume mount comment in docker-compose.yml
+      # records it — and the same tag is written out again in ci.yml twice, so
+      # a one-line bump here would leave CI on the old server.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
