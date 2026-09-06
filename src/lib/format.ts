@@ -13,6 +13,8 @@ export function timeAgo(date: Date | string): string {
   if (weeks < 5) return weeks === 1 ? "last week" : `${weeks} weeks ago`;
   const months = Math.floor(days / 30);
   if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
-  const years = Math.floor(days / 365);
+  // Derived from months, not days, so the two branches share one definition
+  // of a month: years can never be 0 here, because months is already >= 12.
+  const years = Math.floor(months / 12);
   return `${years} year${years === 1 ? "" : "s"} ago`;
 }

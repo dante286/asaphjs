@@ -73,13 +73,11 @@ describe("timeAgo: months and years", () => {
     expect(timeAgo(daysAgo(days))).toBe(expected);
   });
 
-  // Skipped, not deleted: days 360 through 364 currently render as
-  // "0 years ago", because months hits 12 (at 360 days, on the 30-day month)
-  // five days before years reaches 1 (at 365). This is the assertion that
-  // should pass; unskip it with the fix, and tighten it to the exact string
-  // once #41 settles which way the boundary moves.
-  it.skip.each([360, 364])("renders %i days ago as a month count, not 0 years", (days) => {
-    expect(timeAgo(daysAgo(days))).not.toBe("0 years ago");
+  // Days 360 through 364 used to render as "0 years ago": months hit 12 on the
+  // 30-day month while years, computed on a 365-day year, was still 0. Years is
+  // now derived from months, so the first year arrives with the twelfth month.
+  it.each([360, 364])("renders %i days ago as 1 year ago", (days) => {
+    expect(timeAgo(daysAgo(days))).toBe("1 year ago");
   });
 });
 
