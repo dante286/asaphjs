@@ -326,6 +326,23 @@ source tree, which quietly restores the fallback the staging was there to remove
 that closed, deleting `@img` from the traced output turns the photo spec red, locally and
 in an image alike.
 
+**The tracer used to need a hint here, and no longer does.** `next.config.ts` carried an
+`outputFileTracingIncludes` block pulling `./node_modules/@img/**/*` into two route traces,
+written when the tracer stopped at the `.node` binary and left libvips behind. On the
+versions pinned here — Next 16.3.4, sharp 0.35.4 — it follows the shared library on its
+own, and the block's own build said so: five traces picked up `@img` while the two globs
+named only two of them, and one of the two globs was reaching a route that doesn't use
+sharp at all. Rebuilt from a cleared `.next` without the block, `@img` lands in exactly the
+four traces that load sharp — the photo route, the items `POST` route (through
+`mirrorCover`), and the collection and item detail pages (through the metadata server
+actions) — and `.next/standalone/node_modules/@img/sharp-libvips-linux-x64/lib` holds
+`libvips-cpp.so.8.18.6`. Verified on both sides of the libc split: a host build against
+glibc, and the alpine image through `docker-e2e`, where sharp resolves
+`@img/sharp-linuxmusl-x64` and `@img/sharp-libvips-linuxmusl-x64` instead. If a future
+version regresses this, narrow the hint to those four routes and write the trace listing
+down beside it — don't restore two globs that had already drifted out of step with which
+routes touch sharp.
+
 What the four specs cover:
 
 - **The photo upload.** Uploads an image, asserts the cover resolves to
