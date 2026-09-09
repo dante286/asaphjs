@@ -119,6 +119,114 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    docker compose up -d --build app
    ```
 
+## Running the published image
+
+Every `v*` tag publishes an image to
+[`ghcr.io/dante286/asaphjs`](https://github.com/dante286/asaphjs/pkgs/container/asaphjs), so
+you don't have to build one:
+
+```bash
+docker pull ghcr.io/dante286/asaphjs:0.1.0
+```
+
+The tags are `0.1.0`, the floating `0.1`, `latest`, and a `sha-<commit>` for pinning to an
+exact build. There is deliberately no bare `0`: this is 0.x software, where the minor number
+is where breaking changes live, so a floating major would quietly carry you across them.
+`latest` and the minor tag skip prereleases. `linux/amd64` only — see
+[Architectures](#architectures).
+
+The image is the app and nothing else. It needs a Postgres 14+ (18 recommended) that has
+already been migrated and seeded, and it does neither at boot — `drizzle-kit` isn't in the
+image. Run `npm run db:migrate && npm run db:seed` from a checkout against the same database
+before the first start, and again after an upgrade whose release notes mention a migration.
+
+```bash
+docker run -d --name asaph -p 3000:3000 \
+  -e DATABASE_URL=postgresql://postgres:mysecretpassword@host.docker.internal:5432/asaph \
+  -e BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
+  -e BETTER_AUTH_URL=http://localhost:3000 \
+  -v asaph-uploads:/app/uploads \
+  ghcr.io/dante286/asaphjs:0.1.0
+```
+
+`DATABASE_URL` and `BETTER_AUTH_SECRET` are the only two *required* variables;
+`BETTER_AUTH_URL` is optional but worth setting, for the reasons under
+[There is no origin to bake in](#there-is-no-origin-to-bake-in--but-do-set-better_auth_url).
+Everything in
+[`.env.example`](.env.example) works here too: `ALLOW_SIGNUPS=false` to
+[close registration](#closing-registration-on-an-instance), and the `IGDB_*`/`TMDB_API_KEY`
+credentials for [metadata lookups](#metadata-lookups), which are simply absent without them.
+
+**Mount `/app/uploads`.** Item photos are written there, outside `public/` and outside the
+image. Without a volume they live in the container's writable layer and vanish with it — and
+`docker run --rm` on an upgrade would take every cover photo with it. `UPLOADS_DIR` already
+points there in the image; override it only if you mount somewhere else.
+
+### There is no origin to bake in — but do set `BETTER_AUTH_URL`
+
+The image carries no origin, which is what lets one build run on `localhost:3000`, on a LAN
+address, and behind a reverse proxy on a real domain. Nothing is compiled in: Better Auth
+derives its base URL from the incoming request, and the links that have to be absolute —
+share links, invite links — come from `requestOrigin()`, which prefers `x-forwarded-host` and
+`x-forwarded-proto` and falls back to `Host`. Put it behind a proxy that forwards those and
+the links come out right. (`src/lib/request-origin.test.ts` pins that precedence, including
+that `localhost.evil.example` is not loopback.)
+
+**`NEXT_PUBLIC_BETTER_AUTH_URL` does not exist any more, and setting it does nothing.**
+Worth stating outright, because the failure is silent: `NEXT_PUBLIC_*` values are inlined
+into the client bundle when the image is *built*, so passing one to `docker run` never had
+any effect, and baking one in is precisely what would tie the image to one host. If you have
+it in an older `.env` or copied a compose file from another Next.js project, drop it — the
+Dockerfile takes no build arguments at all.
+
+`BETTER_AUTH_URL` (no `NEXT_PUBLIC_`) is a different thing: it's read at runtime, so it works
+on `docker run`, and it's worth setting to your public origin. Without it the app is fully
+usable — sign-in, sign-up and everything else go through Server Actions, which don't consult
+it — but two things change:
+
+- Better Auth logs `Base URL is not set` at every boot. Harmless, and alarming in a log you
+  are reading for some other reason.
+- The `/api/auth/*` REST endpoints reject with `403 INVALID_ORIGIN`, because the origin
+  allowlist Better Auth builds from `baseURL` is empty. Nothing in Asaph calls them — the UI
+  is Server Actions throughout — so this only bites if you're scripting against them.
+
+Set it and both go away:
+
+```bash
+-e BETTER_AUTH_URL=https://asaph.example.com
+```
+
+It's per-deployment and runtime-only, so it costs the image none of its portability.
+
+### Architectures
+
+`linux/amd64` only. Building arm64 would mean QEMU, and the emulated leg is the whole
+Turbopack compile rather than just a native dependency download — five to ten times slower,
+so twenty to forty minutes added to every release for demand nobody has expressed.
+(`package-lock.json` lists `@img/sharp-linuxmusl-arm64`, but that isn't evidence of any: npm
+records every platform's optional dependency in lockfile v3, and it lists ppc64, riscv64 and
+s390x too.) If arm64 is wanted, the right shape is a matrix of native `ubuntu-24.04` and
+`ubuntu-24.04-arm` runners merged by digest, not QEMU.
+
+### Cutting a release
+
+`package.json`'s version is hand-maintained, so a release is a version bump merged to main,
+then a tag on that commit:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+`release.yml` guards the tag rather than re-running the suite on a commit that already
+passed: the tag must be `v*`, its version must match `package.json`, the commit must be an
+ancestor of `main`, and `ci-required` must have concluded successfully for that exact SHA. It
+then builds, pushes, and cuts a GitHub Release whose notes are generated from the merge
+commits since the previous tag. `workflow_dispatch` against a tag re-publishes it.
+
+The GHCR package is created **private** on the first publish and has to be made public by
+hand, in the package's settings on GitHub. That's a one-time UI action, not something a
+workflow can do for you.
+
 ## Scripts
 
 | Command | Does |
@@ -390,9 +498,9 @@ what the browser run costs in the first place. Postgres is a plain container on 
 user-defined network rather than a `services:` block, because the app container has to
 reach it by name while the migrate and seed steps reach it on a published port — the
 alternative is `--network host` and an assumption about the runner's Docker that doesn't
-hold on a laptop. The image is built with **no** `NEXT_PUBLIC_BETTER_AUTH_URL` build
-argument, matching what a release would publish, so the run doubles as the regression test
-for that decision. The container's log is printed on failure: a missing native library
+hold on a laptop. The image is built with **no build arguments**, the same way `release.yml`
+builds what it publishes, so the run doubles as the regression test for the image being
+origin-agnostic. The container's log is printed on failure: a missing native library
 reaches the specs as a dialog that never closed, and the reason is only in there.
 
 ### Conventions

@@ -1,15 +1,19 @@
 services:
   app:
+    # No build args: the image is origin-agnostic, and passing one would bake a
+    # host into the client bundle. See the note in the Dockerfile.
     build:
       context: .
-      args:
-        NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:3000
     ports:
       - "3000:3000"
     environment:
       DATABASE_URL: postgresql://postgres:mysecretpassword@db:5432/asaph
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
-      NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:3000
+      # Runtime, not build time — the image stays origin-agnostic either way.
+      # Optional: without it the app still works (every auth path is a Server
+      # Action), but Better Auth warns at boot and /api/auth/* answers 403
+      # INVALID_ORIGIN. Compose knows where it publishes, so it may as well say.
+      BETTER_AUTH_URL: http://localhost:3000
       UPLOADS_DIR: /app/uploads
       # `false` closes registration. Compose reads this from `.env` (not
       # `.env.local`) or the shell; unset leaves signups open.
