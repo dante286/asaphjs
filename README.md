@@ -151,7 +151,7 @@ docker run -d --name asaph -p 3000:3000 \
 
 `DATABASE_URL` and `BETTER_AUTH_SECRET` are the only two *required* variables;
 `BETTER_AUTH_URL` is optional but worth setting, for the reasons under
-[There is no origin to bake in](#there-is-no-origin-to-bake-in--but-do-set-better_auth_url).
+[Origins](#origins-nothing-to-bake-in-but-do-set-better_auth_url).
 Everything in
 [`.env.example`](.env.example) works here too: `ALLOW_SIGNUPS=false` to
 [close registration](#closing-registration-on-an-instance), and the `IGDB_*`/`TMDB_API_KEY`
@@ -162,7 +162,7 @@ image. Without a volume they live in the container's writable layer and vanish w
 `docker run --rm` on an upgrade would take every cover photo with it. `UPLOADS_DIR` already
 points there in the image; override it only if you mount somewhere else.
 
-### There is no origin to bake in — but do set `BETTER_AUTH_URL`
+### Origins: nothing to bake in, but do set `BETTER_AUTH_URL`
 
 The image carries no origin, which is what lets one build run on `localhost:3000`, on a LAN
 address, and behind a reverse proxy on a real domain. Nothing is compiled in: Better Auth
