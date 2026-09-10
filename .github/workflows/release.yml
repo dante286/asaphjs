@@ -1,0 +1,254 @@
+name: Release
+
+# A `v*` tag is the only trigger that matters. `workflow_dispatch` is here
+# because GitHub's dispatch UI lets you choose a tag as the ref and everything
+# below reads `github.ref` either way — a re-publish button for free, with no
+# inputs to define. Dispatching from a branch fails in `guard`, loudly, rather
+# than publishing something untagged.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Scoped per job below. Nothing at the top level needs more than a checkout.
+permissions:
+  contents: read
+
+# Two runs against one tag would race for the same registry tags. Never
+# cancel-in-progress: a half-pushed manifest is worse than a duplicated run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # `dante286/asaphjs` — already lowercase, which GHCR requires of the whole
+  # path. A repository rename that introduced a capital would need a `tr` here.
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # Re-running the full suite on a tag that points at an already-tested commit
+  # costs five minutes for no new information. What CI can't tell us is whether
+  # this *tag* has any business being published, so that is all this job asks.
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # For the check-runs query in the last step. Read-only.
+      checks: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      # Full history: `merge-base --is-ancestor` can't answer from a shallow
+      # clone, and a wrong answer there reads as "not on main" for every tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: The ref must be a v* tag
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "::error::$GITHUB_REF is not a v* tag. Dispatch this workflow with a tag as the ref."
+            exit 1
+          fi
+
+      # `package.json` version is hand-maintained and currently 0.1.0, so
+      # `git tag v0.2.0` today would publish an image whose baked version
+      # disagrees with the tag it is published under. Nothing else catches that.
+      - name: The tag must match package.json
+        id: version
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [[ "$tag" != "$pkg" ]]; then
+            echo "::error::tag v$tag disagrees with package.json $pkg. Bump one of them."
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          # A hyphen is the semver prerelease separator: 0.2.0-rc.1 is one,
+          # 0.2.0 is not. Decides the GitHub Release flag below; the image tags
+          # are metadata-action's own reading of the same thing.
+          if [[ "$tag" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "v$tag matches package.json"
+
+      # Tags are cheap to cut from anywhere. This is the one that stops a
+      # release being built from a feature branch someone forgot to merge.
+      - name: The commit must be on main
+        run: |
+          git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_SHA is not an ancestor of main."
+            exit 1
+          fi
+          echo "$GITHUB_SHA is on main"
+
+      # Being on main is not the same as being green — a tag can point at a
+      # commit whose CI failed, or at one still running. `ci-required` is the
+      # aggregate job branch protection already gates merges on, so asking
+      # about that one check answers for every tier at once.
+      - name: CI must have passed for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion="$(gh api \
+            "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?check_name=ci-required" \
+            --jq '[.check_runs[] | select(.status == "completed")] | first | .conclusion // "none"')"
+          if [[ "$conclusion" != "success" ]]; then
+            echo "::error::ci-required for $GITHUB_SHA concluded '$conclusion', not success."
+            exit 1
+          fi
+          echo "ci-required passed for $GITHUB_SHA"
+
+  publish:
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The only job that gets it.
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # The built-in token, scoped to this repository by the `packages: write`
+      # above. No PAT and no repository secret to rotate or leak.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # v0.2.0 becomes 0.2.0, 0.2, latest and a sha- tag. Deliberately no bare
+      # major: the project is 0.x, so a floating `0` would carry people across
+      # breaking changes. Add `pattern={{major}}` at 1.0.0.
+      #
+      # Prereleases get neither `latest` nor the minor tag. `latest=auto` is the
+      # action's default and skips prerelease semver tags, and the
+      # `{{major}}.{{minor}}` pattern skips them too — spelled out here so the
+      # behaviour is readable without opening the action's docs.
+      #
+      # The sha tag is `format=long`: a 40-character tag is ugly in a package
+      # listing but pastes back into `git show` without a guess.
+      - name: Work out the tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+
+      # No build arguments, and that is the whole point of the image.
+      #
+      # `NEXT_PUBLIC_*` values are inlined into the client bundle at build time,
+      # so any origin passed here would be baked into every bundle every
+      # downstream user pulls. Passing nothing is what makes one image run
+      # anywhere: nothing in `src/` reads a build-time origin at all, and
+      # `requestOrigin()` derives absolute links from `x-forwarded-host`/`host`
+      # per request. `docker-e2e` in ci.yml builds the image the same way, so a
+      # change that reintroduced a build-time origin dependency would go red
+      # there rather than in someone's deployment.
+      #
+      # `cache-from` only. Releases are rare, and writing this build's layers
+      # into the Actions cache would evict entries pull requests restore from
+      # several times a day, to save a few minutes a few times a year.
+      #
+      # `provenance: false` because the image is single-platform: buildx would
+      # otherwise push an index whose second entry is an attestation manifest,
+      # which GHCR's package page renders as a phantom `unknown/unknown`
+      # platform. Nothing here consumes the attestation. Worth revisiting
+      # alongside multi-arch, when the index stops being a formality.
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Published"
+            echo
+            echo '```'
+            echo "docker pull $IMAGE:${{ needs.guard.outputs.version }}"
+            echo '```'
+            echo
+            echo "Digest: \`${{ steps.build.outputs.digest }}\`"
+            echo
+            echo "Tags:"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: [guard, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      # Creating the release is the only write this workflow performs outside
+      # the registry.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The generated half lists the merge commits since the previous tag, and
+      # the merge-commit flow here means PR titles survive as those subjects —
+      # so it reads like a changelog rather than like `git log`. The pull
+      # instructions go above it, since that is what a release page is for on a
+      # project whose deliverable is an image.
+      #
+      # Built through the `generate-notes` API rather than `gh release create
+      # --generate-notes`, because this step has to be idempotent:
+      # `workflow_dispatch` re-publishes an image for a tag whose release
+      # already exists, and `gh release edit` has no `--generate-notes` to pair
+      # with. Composing the body ourselves means both paths write the same
+      # thing, so a re-publish refreshes the digest instead of replacing the
+      # changelog with a bare `docker pull`.
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          PRERELEASE: ${{ needs.guard.outputs.prerelease }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          tag="v$VERSION"
+
+          cat > notes.md <<EOF
+          \`\`\`bash
+          docker pull $IMAGE:$VERSION
+          \`\`\`
+
+          \`linux/amd64\`, digest \`$DIGEST\`. See
+          [Running the published image](https://github.com/$GITHUB_REPOSITORY#running-the-published-image)
+          for what it needs around it.
+
+          EOF
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$tag" --jq .body >> notes.md
+
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "release $tag already exists; refreshing it"
+            gh release edit "$tag" --notes-file notes.md
+          else
+            args=(--verify-tag --title "$tag" --notes-file notes.md)
+            if [[ "$PRERELEASE" == "true" ]]; then
+              args+=(--prerelease)
+            fi
+            gh release create "$tag" "${args[@]}"
+          fi

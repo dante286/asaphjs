@@ -254,11 +254,11 @@ jobs:
 
       - uses: docker/setup-buildx-action@v4
 
-      # No NEXT_PUBLIC_BETTER_AUTH_URL build argument, deliberately — that
-      # matches what the release workflow publishes, so this run doubles as the
-      # regression test for that decision. Sign-in and sign-up are Server
-      # Actions and need no client-side base URL; anything that grew a
-      # dependency on one would fail here rather than in a deployment.
+      # No build arguments, which is the same way release.yml builds what it
+      # publishes — so this run doubles as the regression test for the image
+      # being origin-agnostic. Sign-in and sign-up are Server Actions and need
+      # no client-side base URL; anything that grew a build-time dependency on
+      # one would fail here rather than in a deployment.
       - name: Build the image
         uses: docker/build-push-action@v7
         with:

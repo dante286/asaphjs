@@ -14,13 +14,21 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# NEXT_PUBLIC_* vars are inlined into the client bundle at build time, so this
-# needs to be known here. It isn't a secret. DATABASE_URL/BETTER_AUTH_SECRET
-# are only needed at runtime (every route in this app is server-rendered),
-# so they're deliberately NOT build args — that would bake secrets into image layers.
-ARG NEXT_PUBLIC_BETTER_AUTH_URL
-ENV NEXT_PUBLIC_BETTER_AUTH_URL=${NEXT_PUBLIC_BETTER_AUTH_URL} \
-    NEXT_TELEMETRY_DISABLED=1
+# No build arguments at all, which is what makes one image runnable anywhere.
+#
+# The only candidate was ever NEXT_PUBLIC_BETTER_AUTH_URL: NEXT_PUBLIC_* values
+# are inlined into the client bundle here rather than read at runtime, so an
+# origin passed in would be baked into every bundle every user of this image
+# pulls, and setting the variable on `docker run` would do exactly nothing.
+# Nothing in src/ reads it — the auth UI is Server Actions, and the links that
+# have to be absolute come from requestOrigin(), which reads the request's own
+# host headers. Reintroducing it would make the image host-specific; put the
+# origin in front of the container instead.
+#
+# DATABASE_URL and BETTER_AUTH_SECRET are runtime-only for a different reason:
+# every route is server-rendered, so they're never needed at build time, and a
+# build arg would bake secrets into image layers.
+ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
 

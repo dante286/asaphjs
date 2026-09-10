@@ -155,6 +155,7 @@ export default defineConfig({
         "src/lib/csv/parse.ts",
         "src/lib/auth/signups.ts",
         "src/lib/format.ts",
+        "src/lib/request-origin.ts",
         "src/db/queries/collections.ts",
         "src/db/queries/items.ts",
         "src/db/queries/members.ts",
