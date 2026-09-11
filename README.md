@@ -16,6 +16,27 @@ sharing) if you want the full rationale.
 - The "Industry" design system (blueprint/hairline-corner motif) is vendored verbatim in
   `src/app/design-system.css`.
 
+### Why `package.json` overrides esbuild
+
+`drizzle-kit` declares `@esbuild-kit/esm-loader`, a package that was folded into `tsx` years
+ago and now exists only to drag in `esbuild@0.18.20` — the version GHSA-67mh-4wv8-2f99 covers,
+where the dev server answers cross-origin reads of your source. Nothing in the shipped
+`drizzle-kit` bundle imports it (`grep -rl esbuild-kit node_modules/drizzle-kit` matches the
+manifest and nothing else), so it is a dependency that gets installed and audited but never run.
+
+No drizzle-kit release drops it: 0.31.10 is the newest 0.x and still declares it, and the only
+thing past it is a 1.0.0 release candidate. So the override pins that one edge:
+
+```json
+"overrides": { "@esbuild-kit/core-utils": { "esbuild": "^0.25.4" } }
+```
+
+Scoped to `@esbuild-kit/core-utils` rather than applied tree-wide, because `tsx` and Vite
+already resolve 0.28.2 and a blanket `^0.25.x` would *downgrade* them — a caret on a `0.x`
+version pins the minor. `^0.25.4` is the range drizzle-kit uses for its own direct `esbuild`
+dependency, so the two dedupe to one 0.25.12 copy instead of adding a second platform-binary
+tree. Delete the override when drizzle-kit drops the dependency.
+
 ## Setup (first-time run)
 
 Requires Node 20.9+ (the floor Next.js 16 enforces) and Docker. The container image builds
