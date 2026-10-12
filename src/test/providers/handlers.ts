@@ -15,7 +15,7 @@ import {
 /**
  * The hosts the providers reach. Exported so a spec's own override names the
  * same string this file does — a typo in a `server.use` URL would otherwise
- * leave the request unhandled, and `onUnhandledRequest: "error"` reports that
+ * leave the request unhandled, and `onUnhandledFrame: "error"` reports that
  * as a network escape rather than as the typo it is.
  */
 export const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token";
