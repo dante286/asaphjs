@@ -33,7 +33,7 @@ beforeAll(() => {
    * cannot quietly start reaching the internet from CI. Without it, the escape
    * hatch is silent and the suite still passes.
    */
-  server.listen({ onUnhandledRequest: "error" });
+  server.listen({ onUnhandledFrame: "error" });
   recordRequestsFrom(server);
 });
 

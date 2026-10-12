@@ -318,7 +318,7 @@ and its `form:manga` machine tags. Each is a silent-wrong-data bug if it regress
 `IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET` and `TMDB_API_KEY` from `process.env` before any
 provider module is imported and installs obvious fakes in their place, so a runner that
 did have real ones can't leak them into a call. MSW then runs with
-`onUnhandledRequest: "error"`, which is what makes the hermetic claim enforceable rather
+`onUnhandledFrame: "error"`, which is what makes the hermetic claim enforceable rather
 than aspirational: any request no handler claims **fails the test**. Repointing TMDB's
 base URL at an unmocked host, to check that, failed 17 of its 24 tests instead of reaching
 the network — the 7 that still passed are the ones that make no request at all.

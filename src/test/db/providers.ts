@@ -10,7 +10,7 @@ import { recordRequestsFrom, resetRecordedRequests } from "@/test/providers/requ
  * hydrates the candidate the create dialog previewed, and the metadata actions
  * hydrate and then mirror a cover. Those paths make real outbound requests, so
  * the specs that touch them stand MSW up the same way the providers tier does —
- * same handlers, same `onUnhandledRequest: "error"`, so a request nobody
+ * same handlers, same `onUnhandledFrame: "error"`, so a request nobody
  * claimed fails the test instead of reaching the internet from CI.
  *
  * Open Library is what these specs look up against, because it needs no
@@ -46,10 +46,10 @@ let coverBytes: Buffer | null = null;
 export function interceptProviderNetwork(): void {
   beforeAll(async () => {
     coverBytes = await tinyPng();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledFrame: "error" });
     /**
      * The same recorder the providers tier installs, on this tier's own server.
-     * `onUnhandledRequest: "error"` already proves nothing escapes to the
+     * `onUnhandledFrame: "error"` already proves nothing escapes to the
      * internet; this is for the specs that need to know how many requests went
      * out — which is the only way to see a cache actually sparing a free tier,
      * since a served row and a refetched one both return the same fields.
