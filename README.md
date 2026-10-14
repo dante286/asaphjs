@@ -58,6 +58,10 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) works, the
    32-char "API Key" or the longer "API Read Access Token".
 
+   The `SMTP_*`/`EMAIL_FROM` variables are optional as well. Without them, mail that
+   would have been sent is printed to the dev server's console. To see it rendered
+   instead, see [Seeing mail locally with Mailpit](#seeing-mail-locally-with-mailpit).
+
    `ALLOW_SIGNUPS` is optional too and defaults to open. Don't set it to `false`
    yet — see [Closing registration on an instance](#closing-registration-on-an-instance),
    which needs an account to exist first.
@@ -176,7 +180,9 @@ docker run -d --name asaph -p 3000:3000 \
 Everything in
 [`.env.example`](.env.example) works here too: `ALLOW_SIGNUPS=false` to
 [close registration](#closing-registration-on-an-instance), and the `IGDB_*`/`TMDB_API_KEY`
-credentials for [metadata lookups](#metadata-lookups), which are simply absent without them.
+credentials for [metadata lookups](#metadata-lookups), which are simply absent without them,
+and the `SMTP_*`/`EMAIL_FROM` settings for [sending email](#sending-email). Without those,
+mail is printed to the container log instead.
 
 **Mount `/app/uploads`.** Item photos are written there, outside `public/` and outside the
 image. Without a volume they live in the container's writable layer and vanish with it — and
@@ -292,9 +298,19 @@ The pure-logic modules — the ones holding the decisions that are hard to check
 `buildPrefillPlan` deciding which provider values may overwrite an owner's own data,
 `guessColumnType` deciding what a CSV column *is*, `NAME_PATTERN` deciding which upload
 names can't escape the uploads directory, and `stripItemsForPublic` deciding what a
-stranger with a share link may see. The two modules that do read env (`signupsAllowed`,
-`resolveLookupConfig`) stub it in both directions rather than inheriting whatever the
-developer happens to have exported.
+stranger with a share link may see. The modules that do read env (`signupsAllowed`,
+`resolveLookupConfig`, the SMTP settings) stub it in both directions rather than
+inheriting whatever the developer happens to have exported.
+
+The email specs are the one place this tier opens a socket. It's a loopback listener in
+the same process, `src/test/email/fake-smtp.ts`, which plays an SMTP server that never
+speaks TLS. Asserting that `transportOptions` returns `requireTLS: true` would still pass
+if the key were misspelled, because nodemailer ignores keys it doesn't know and would
+send in the clear. So the TLS rules are checked by handing those exact options to the
+real nodemailer client and watching whether it delivers the body. `sendEmail` itself is
+tested with a capture transport: `createTransport` is mocked to return nodemailer's own
+stream transport, so messages are fully composed but land in an array instead of on a
+socket.
 
 The rate limiter is here too, on fake timers, because its whole subject is a one-second
 refill window — including the footgun that `getLimiter` memoises by key and silently
@@ -954,6 +970,129 @@ Four things worth knowing about that path:
 - sharp ships prebuilt platform binaries, so the Docker image needs the `linuxmusl`
   ones from `package-lock.json` — regenerate the lockfile with `npm install`, never by
   hand-editing, or `npm ci` inside `node:24-alpine` won't find them.
+
+## Sending email
+
+Asaph sends mail over SMTP through one function, `sendEmail({ to, subject, text, html })`,
+in `src/lib/email/`. Nothing else in the app touches nodemailer, so a test swaps the
+transport at that seam and an HTTP-API provider, if one is ever wanted, changes that one
+directory. Invite notifications and password reset are built on it. Until they land, the
+two older call sites (`inviteMemberAction` and Better Auth's verification hook) still
+print their `[dev email stub]` lines.
+
+**It's optional.** With `SMTP_HOST` or `EMAIL_FROM` unset, `emailConfigured()` is false
+and `sendEmail` prints the message, links included, to the server console instead of
+sending it. That's what the stubs have always done, so existing instances and local dev
+need no new configuration. It matters because this image is run by people who will never
+set up mail.
+
+| Variable | |
+| --- | --- |
+| `SMTP_HOST` | The server. Required to send. |
+| `SMTP_PORT` | Default `587`. `465` means implicit TLS; see below. |
+| `SMTP_USER` / `SMTP_PASSWORD` | Both or neither. Neither means no `AUTH`, for a relay that wants none. |
+| `EMAIL_FROM` | The sender, `addr@example.com` or `Asaph <addr@example.com>`. Required to send. |
+
+**Discrete variables, not an `SMTP_URL`.** A URL was the first design. It was dropped
+because Azure's SMTP password is an Entra client secret, and those routinely contain `~`
+and `.`. Inside a URL they need percent-encoding, and forgetting to encode one doesn't
+produce a config error. It produces an authentication failure indistinguishable from a
+wrong password. Separate variables leave nothing to encode. Values are trimmed, because a
+stray space after the `=` fails the same way. A value that is set but can't work, such
+as a non-numeric port or a password with no user, throws an error naming the variable.
+It doesn't fall back to the console: someone who set mail up should hear that it's
+broken, not find links in a log.
+
+**SMTP rather than a vendor SDK.** The published image runs wherever someone deploys it,
+and SMTP is the one protocol every provider speaks: Azure Communication Services, Resend,
+Postmark, SES, Fastmail, a home relay. An SDK would tie the image to whichever vendor we
+picked. That's already paid off once: see the retirement note under Azure below.
+
+**TLS is required, and the port decides how.** Port `465` is implicit TLS. Any other port
+must upgrade with STARTTLS, and a server that doesn't offer it is an error, not a
+plaintext send. nodemailer's default is to use STARTTLS *if advertised*, which is exactly
+what a downgrade attack exploits: strip the advertisement and the client carries on in
+the clear, with invite and reset tokens in the body. The one exception is a **loopback**
+host (`localhost`, `127.0.0.1`, `::1`). There Asaph sends plaintext and doesn't attempt
+STARTTLS, since the traffic never leaves the machine. That's what lets Mailpit work
+below, and it's right for a production relay on localhost too, whose certificate is
+usually self-signed. `localhost.evil.example` is not loopback.
+
+**Sends are awaited, and they throw.** The transport doesn't decide what a failure means.
+A failed invite should keep the invite and say so; a failed reset should look like any
+other reset request. Each caller decides, so there's no queue and no retry here. Timeouts
+are 10s to connect, 10s for the greeting and 20s of silence, down from nodemailer's two
+minutes and ten. A send runs inline with someone's click, and a server that accepts the
+connection and then goes quiet shouldn't hold that click for minutes.
+
+### Seeing mail locally with Mailpit
+
+`docker-compose.yml` has an optional [Mailpit](https://mailpit.axllent.org/) service
+behind a profile, so a plain `docker compose up` never starts it:
+
+```bash
+docker compose --profile mail up -d mailpit
+```
+
+Then set `SMTP_HOST=localhost`, `SMTP_PORT=1025` and any `EMAIL_FROM` in `.env.local`,
+restart `npm run dev`, and read what was sent, rendered, at
+[localhost:8025](http://localhost:8025). Both ports are published on loopback only.
+
+This is for `npm run dev` on the host. **The containerized `app` service can't use it.**
+From inside that container Mailpit is `mailpit:1025`, which isn't loopback, so STARTTLS
+is required. Mailpit only offers STARTTLS when given a certificate, and the app would
+then have to be told to trust it. Adding a "TLS off" switch to make that work would be a
+switch a self-hoster could also leave set in production.
+
+### Azure Communication Services
+
+The first real deployment sends through Azure Communication Services (ACS) Email, which
+accepts SMTP. Setup, per Microsoft's
+[SMTP authentication guide](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/email/send-email-smtp/smtp-authentication):
+
+1. Create an **Email Communication Services** resource, add a domain (Azure-managed or
+   your own, verified), and connect it to a **Communication Services** resource.
+2. Register a **Microsoft Entra application** and create a client secret for it.
+3. On the Communication Services resource, grant that application the
+   *Communication and Email Service Owner* role. Alternatively, use a custom role with
+   `Microsoft.Communication/CommunicationServices/Read`, `…/CommunicationServices/Write`
+   and `Microsoft.Communication/EmailServices/write`.
+4. Still on the Communication Services resource, open **SMTP Usernames** and add one
+   linked to the application. It can be free text, or an email address on a linked
+   domain. Wait for **Ready to use**.
+
+```bash
+SMTP_HOST=smtp.azurecomm.net
+SMTP_PORT=587
+SMTP_USER=<the SMTP Username from step 4>
+SMTP_PASSWORD=<the Entra client secret>
+EMAIL_FROM=Asaph <DoNotReply@your-verified-domain>
+```
+
+Older guides describe a `<resource>.<app-id>.<tenant-id>` username. Microsoft's current
+guide covers only the SMTP Username resource, so use that. Port 25 also works, but 587
+is what Microsoft recommends and what ISPs don't block.
+
+Four things that will otherwise look like bugs:
+
+- **`EMAIL_FROM` must be a MailFrom address on a domain connected to the resource.** A
+  mismatch is rejected when a message is sent, not at connect or login, so a working
+  login proves nothing about the sender. On an Azure-managed domain, the address looks
+  like `DoNotReply@<guid>.azurecomm.net`.
+- **An Azure-managed domain can send 5 messages a minute and 10 an hour, per
+  subscription, and that can't be raised.** A custom domain starts at 30 a minute and
+  100 an hour, and can be raised through a support request
+  ([service limits](https://learn.microsoft.com/en-us/azure/communication-services/concepts/service-limits)).
+  Eleven invites in an hour on a managed domain is a quota, not a bug.
+- **Client secrets expire.** Entra issues them for a fixed term. When one lapses, sends
+  fail with an authentication error, even though nothing in Asaph changed.
+- **ACS Email is being retired on 30 September 2028.** It's in maintenance mode, and
+  Microsoft recommends against onboarding new workloads
+  ([retirement guide](https://learn.microsoft.com/en-us/azure/communication-services/acs-retirement-and-breaking-changes-guide)).
+  Microsoft's suggested successor, Microsoft 365 High Volume Email, only sends *within*
+  the tenant, so it can't deliver an invite to an outside address. Moving off ACS will
+  mean another SMTP provider. Because this is SMTP, that's a change of five environment
+  variables, not of code.
 
 ## MySQL path (not built, but the seam is here)
 

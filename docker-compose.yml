@@ -25,6 +25,15 @@ services:
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:-}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       METADATA_USER_AGENT: ${METADATA_USER_AGENT:-AsaphJS/0.1}
+      # Outgoing mail. Optional, like the lookup keys: without SMTP_HOST and
+      # EMAIL_FROM nothing is sent and each message is printed to the container
+      # log instead. Not the `mailpit` service below — that's for `npm run dev`
+      # on the host, since only a loopback relay may be sent to without TLS.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -48,6 +57,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+
+  # A mail catcher for local dev: accepts anything on 1025 and shows it, rendered,
+  # at http://localhost:8025. Behind a profile so `docker compose up` never starts
+  # it unasked — `docker compose --profile mail up -d mailpit` does. Then set
+  # SMTP_HOST=localhost, SMTP_PORT=1025 and any EMAIL_FROM in `.env.local`.
+  #
+  # Published on loopback only: everything it catches is an invite or reset link.
+  mailpit:
+    image: axllent/mailpit:v1.31
+    profiles: [mail]
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
     restart: unless-stopped
 
 volumes:
