@@ -994,19 +994,22 @@ set up mail.
 | `EMAIL_FROM` | The sender, `addr@example.com` or `Asaph <addr@example.com>`. Required to send. |
 
 **Discrete variables, not an `SMTP_URL`.** A URL was the first design. It was dropped
-because Azure's SMTP password is an Entra client secret, and those routinely contain `~`
-and `.`. Inside a URL they need percent-encoding, and forgetting to encode one doesn't
-produce a config error. It produces an authentication failure indistinguishable from a
-wrong password. Separate variables leave nothing to encode. Values are trimmed, because a
-stray space after the `=` fails the same way. A value that is set but can't work, such
-as a non-numeric port or a password with no user, throws an error naming the variable.
-It doesn't fall back to the console: someone who set mail up should hear that it's
-broken, not find links in a log.
+because SMTP passwords are whatever the provider issues, and some issue ones a URL can't
+hold as-is: an Amazon SES SMTP password is base64, so it can contain `/` and `+`. Inside a
+URL those need percent-encoding, and forgetting to encode one doesn't produce a config
+error. It produces an authentication failure indistinguishable from a wrong password.
+Separate variables leave nothing to encode, so switching providers is a change of values,
+never of format. Values are trimmed, because a stray space after the `=` fails the same
+way. A value that is set but can't work, such as a non-numeric port or a password with no
+user, throws an error naming the variable. It doesn't fall back to the console: someone
+who set mail up should hear that it's broken, not find links in a log.
 
 **SMTP rather than a vendor SDK.** The published image runs wherever someone deploys it,
-and SMTP is the one protocol every provider speaks: Azure Communication Services, Resend,
-Postmark, SES, Fastmail, a home relay. An SDK would tie the image to whichever vendor we
-picked. That's already paid off once: see the retirement note under Azure below.
+and SMTP is the one protocol every provider speaks: Resend, Brevo, Postmark, SES,
+Fastmail, a home relay. An SDK would tie the image to whichever vendor we picked. That has
+already paid off once. The first plan was Azure Communication Services, and Microsoft
+announced the retirement of its email service (30 September 2028) while this transport
+was being built. Moving to Resend changed values in `.env`, not code.
 
 **TLS is required, and the port decides how.** Port `465` is implicit TLS. Any other port
 must upgrade with STARTTLS, and a server that doesn't offer it is an error, not a
@@ -1044,55 +1047,47 @@ is required. Mailpit only offers STARTTLS when given a certificate, and the app 
 then have to be told to trust it. Adding a "TLS off" switch to make that work would be a
 switch a self-hoster could also leave set in production.
 
-### Azure Communication Services
+### Resend
 
-The first real deployment sends through Azure Communication Services (ACS) Email, which
-accepts SMTP. Setup, per Microsoft's
-[SMTP authentication guide](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/email/send-email-smtp/smtp-authentication):
+Asaph's own deployment sends through [Resend](https://resend.com), over SMTP rather than
+its SDK, for the reason above. Setup, per Resend's
+[SMTP guide](https://resend.com/docs/send-with-smtp):
 
-1. Create an **Email Communication Services** resource, add a domain (Azure-managed or
-   your own, verified), and connect it to a **Communication Services** resource.
-2. Register a **Microsoft Entra application** and create a client secret for it.
-3. On the Communication Services resource, grant that application the
-   *Communication and Email Service Owner* role. Alternatively, use a custom role with
-   `Microsoft.Communication/CommunicationServices/Read`, `…/CommunicationServices/Write`
-   and `Microsoft.Communication/EmailServices/write`.
-4. Still on the Communication Services resource, open **SMTP Usernames** and add one
-   linked to the application. It can be free text, or an email address on a linked
-   domain. Wait for **Ready to use**.
+1. In the Resend dashboard, add your domain, create the SPF and DKIM records it shows,
+   and wait for **Verified**. Resend suggests a subdomain (`mail.example.com`) so the
+   sending reputation stays separate from your main domain.
+2. Create an API key with **Sending access**, restricted to that domain. SMTP only
+   sends, so a **Full access** key would only add risk if it leaked.
 
 ```bash
-SMTP_HOST=smtp.azurecomm.net
-SMTP_PORT=587
-SMTP_USER=<the SMTP Username from step 4>
-SMTP_PASSWORD=<the Entra client secret>
-EMAIL_FROM=Asaph <DoNotReply@your-verified-domain>
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=465
+SMTP_USER=resend
+SMTP_PASSWORD=re_...   # the API key
+EMAIL_FROM=Asaph <asaph@mail.example.com>
 ```
 
-Older guides describe a `<resource>.<app-id>.<tenant-id>` username. Microsoft's current
-guide covers only the SMTP Username resource, so use that. Port 25 also works, but 587
-is what Microsoft recommends and what ISPs don't block.
+`465` is implicit TLS. `587` (STARTTLS) works just as well. If your host blocks both, as
+some cloud providers do for outbound mail on new accounts, use **`2587`** (STARTTLS).
+Don't use `2465`: it's implicit TLS on a port Asaph doesn't recognise as such, so Asaph
+would wait for a plaintext greeting that never comes and time out after 10 seconds.
 
-Four things that will otherwise look like bugs:
+Three things that will otherwise look like bugs:
 
-- **`EMAIL_FROM` must be a MailFrom address on a domain connected to the resource.** A
-  mismatch is rejected when a message is sent, not at connect or login, so a working
-  login proves nothing about the sender. On an Azure-managed domain, the address looks
-  like `DoNotReply@<guid>.azurecomm.net`.
-- **An Azure-managed domain can send 5 messages a minute and 10 an hour, per
-  subscription, and that can't be raised.** A custom domain starts at 30 a minute and
-  100 an hour, and can be raised through a support request
-  ([service limits](https://learn.microsoft.com/en-us/azure/communication-services/concepts/service-limits)).
-  Eleven invites in an hour on a managed domain is a quota, not a bug.
-- **Client secrets expire.** Entra issues them for a fixed term. When one lapses, sends
-  fail with an authentication error, even though nothing in Asaph changed.
-- **ACS Email is being retired on 30 September 2028.** It's in maintenance mode, and
-  Microsoft recommends against onboarding new workloads
-  ([retirement guide](https://learn.microsoft.com/en-us/azure/communication-services/acs-retirement-and-breaking-changes-guide)).
-  Microsoft's suggested successor, Microsoft 365 High Volume Email, only sends *within*
-  the tenant, so it can't deliver an invite to an outside address. Moving off ACS will
-  mean another SMTP provider. Because this is SMTP, that's a change of five environment
-  variables, not of code.
+- **Without a verified domain, nothing reaches anyone else.** Sending from
+  `onboarding@resend.dev` only delivers to your Resend account's own address, and any
+  other recipient is rejected with "You can only send testing emails to your own email
+  address"
+  ([details](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain)). That's
+  fine for a first test and useless for invites. `EMAIL_FROM` has to be on the domain
+  from step 1.
+- **The free plan allows 100 emails a day and 3,000 a month**, and the day is a UTC
+  calendar day. Every account is also limited to 10 requests a second, which Resend
+  applies to SMTP the same as to its API
+  ([quotas](https://resend.com/docs/knowledge-base/account-quotas-and-limits)). The
+  101st invite of the day is a quota, not a bug.
+- **The password is the API key.** Revoking or rotating the key in the dashboard breaks
+  sending with an authentication error, even though nothing in Asaph changed.
 
 ## MySQL path (not built, but the seam is here)
 

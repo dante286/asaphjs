@@ -64,26 +64,26 @@ describe("smtpConfig: reading the variables", () => {
   });
 
   it("passes the password through untouched", () => {
-    // The reason these are discrete variables: an Entra client secret, with
-    // the characters a URL would have needed percent-encoded, arrives as-is.
-    const secret = "Ab1~cD.ef_G-h~iJ%2Fk";
+    // The reason these are discrete variables: an SES SMTP password is base64,
+    // and the `/`, `+` and `%` a URL would have needed encoded arrive as-is.
+    const secret = "BKh7/q+Zr3%2Fx9Lw/T+0aBcD=";
     env({
-      SMTP_HOST: "smtp.azurecomm.net",
-      SMTP_USER: "asaph-smtp",
+      SMTP_HOST: "email-smtp.us-east-1.amazonaws.com",
+      SMTP_USER: "AKIAEXAMPLE",
       SMTP_PASSWORD: secret,
-      EMAIL_FROM: "DoNotReply@example.com",
+      EMAIL_FROM: "asaph@example.com",
     });
-    expect(smtpConfig()?.auth).toEqual({ user: "asaph-smtp", pass: secret });
+    expect(smtpConfig()?.auth).toEqual({ user: "AKIAEXAMPLE", pass: secret });
   });
 
   it("trims a stray space off the password", () => {
     env({
-      SMTP_HOST: "smtp.azurecomm.net",
-      SMTP_USER: "asaph-smtp",
-      SMTP_PASSWORD: "Ab1~cD.ef ",
-      EMAIL_FROM: "DoNotReply@example.com",
+      SMTP_HOST: "smtp.resend.com",
+      SMTP_USER: "resend",
+      SMTP_PASSWORD: "re_AbC123_xyz ",
+      EMAIL_FROM: "asaph@example.com",
     });
-    expect(smtpConfig()?.auth?.pass).toBe("Ab1~cD.ef");
+    expect(smtpConfig()?.auth?.pass).toBe("re_AbC123_xyz");
   });
 
   it("refuses a password with no user", () => {
@@ -94,7 +94,11 @@ describe("smtpConfig: reading the variables", () => {
 
 describe("tlsMode: the port decides, unless the host is loopback", () => {
   it.each([
-    ["smtp.azurecomm.net", 587, "starttls"],
+    ["smtp.resend.com", 465, "implicit"],
+    ["smtp.resend.com", 587, "starttls"],
+    // Resend's fallback for hosts that block 587 — the README points there,
+    // not at 2465, which is implicit TLS on a port this rule doesn't know.
+    ["smtp.resend.com", 2587, "starttls"],
     ["smtp.example.com", 25, "starttls"],
     ["smtp.example.com", 2525, "starttls"],
     ["smtp.example.com", 465, "implicit"],

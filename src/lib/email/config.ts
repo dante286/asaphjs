@@ -1,12 +1,12 @@
 /**
  * SMTP settings, read from discrete variables rather than one `SMTP_URL`.
  *
- * A URL was the first idea and was rejected: Azure Communication Services
- * authenticates with an Entra client secret as the password, and those
- * routinely contain characters like `~` that need percent-encoding inside a
- * URL. Forgetting to encode one isn't a config error — it's an authentication
- * failure that looks exactly like a wrong password. Separate variables leave
- * nothing to encode.
+ * A URL was the first idea and was rejected: SMTP passwords are whatever the
+ * provider issued, and some issue ones a URL can't hold as-is — an Amazon SES
+ * SMTP password is base64, `/` and `+` included. Forgetting to percent-encode
+ * one isn't a config error — it's an authentication failure that looks exactly
+ * like a wrong password. Separate variables leave nothing to encode, so moving
+ * between Resend, SES or Brevo is a change of values and never of format.
  *
  * Read on every call rather than captured at module load, so tests can stub the
  * environment per case and so `emailConfigured()` answers for the process as it
@@ -55,10 +55,10 @@ export function smtpConfig(): SmtpConfig | null {
   }
 
   const user = read("SMTP_USER");
-  // Trimmed like the rest. Entra client secrets are drawn from letters, digits
-  // and `~._-`, so surrounding whitespace is never part of one — it's a stray
-  // space after the `=` in an env file, and sending it would fail exactly like
-  // a wrong password.
+  // Trimmed like the rest. No provider issues a key with surrounding whitespace
+  // (a Resend API key is `re_` plus letters, digits and `_`; SES's is base64),
+  // so it's a stray space after the `=` in an env file, and sending it would
+  // fail exactly like a wrong password.
   const pass = read("SMTP_PASSWORD");
   if (pass !== undefined && user === undefined) {
     // nodemailer would quietly skip AUTH without a user, and the server's

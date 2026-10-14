@@ -82,10 +82,10 @@ describe("sendEmail with no transport configured", () => {
 
 describe("sendEmail with a transport configured", () => {
   beforeEach(() => {
-    vi.stubEnv("SMTP_HOST", "smtp.azurecomm.net");
-    vi.stubEnv("SMTP_USER", "asaph-smtp");
-    vi.stubEnv("SMTP_PASSWORD", "s3cret~value");
-    vi.stubEnv("EMAIL_FROM", "Asaph <DoNotReply@example.com>");
+    vi.stubEnv("SMTP_HOST", "smtp.resend.com");
+    vi.stubEnv("SMTP_USER", "resend");
+    vi.stubEnv("SMTP_PASSWORD", "re_AbC123_xyz");
+    vi.stubEnv("EMAIL_FROM", "Asaph <asaph@example.com>");
   });
 
   it("sends a multipart message from EMAIL_FROM and logs nothing", async () => {
@@ -96,7 +96,7 @@ describe("sendEmail with a transport configured", () => {
     expect(log).not.toHaveBeenCalled();
     expect(capture.raw).toHaveLength(1);
     const raw = capture.raw[0];
-    expect(raw).toMatch(/^From: Asaph <DoNotReply@example\.com>$/m);
+    expect(raw).toMatch(/^From: Asaph <asaph@example\.com>$/m);
     expect(raw).toMatch(/^To: friend@example\.com$/m);
     expect(raw).toMatch(/^Subject: You're invited to Vinyl$/m);
     // Both parts, as alternatives of each other: the text part is a real one.
@@ -110,11 +110,11 @@ describe("sendEmail with a transport configured", () => {
 
     expect(capture.options).toEqual([
       expect.objectContaining({
-        host: "smtp.azurecomm.net",
+        host: "smtp.resend.com",
         port: 587,
         secure: false,
         requireTLS: true,
-        auth: { user: "asaph-smtp", pass: "s3cret~value" },
+        auth: { user: "resend", pass: "re_AbC123_xyz" },
       }),
     ]);
   });
