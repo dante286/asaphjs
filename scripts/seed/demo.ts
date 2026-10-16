@@ -14,7 +14,7 @@ const DEMO_PASSWORD = "demopassword123";
 
 /**
  * Fixed rather than `nanoid()` so the URLs they appear in survive a reseed and
- * can be pasted from the README: an invite link otherwise lives in one email
+ * can be pasted from docs/local-development.md: an invite link otherwise lives in one email
  * (or one console line, with no SMTP set up) and the owner's Copy invite link
  * button, and a rotating share token can't be bookmarked.
  *

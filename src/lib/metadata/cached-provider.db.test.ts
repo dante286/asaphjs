@@ -19,7 +19,7 @@ import type { ProviderKey } from "./types";
  * The automated half of `npm run lookup:check`. That script counts outbound
  * requests around each call and asserts seven things about them, but it needs
  * real credentials, a real provider and a human to read its output — so the
- * cache the README calls "the feature, not an optimization" ran unprotected
+ * cache the docs call "the feature, not an optimization" ran unprotected
  * between runs (#35).
  *
  * What makes this worth a third spec rather than a duplicate of two that exist:
@@ -43,7 +43,7 @@ import type { ProviderKey } from "./types";
  * hydrate costs at least one request": Open Library reads the work, its
  * search-index doc and its series record, while IGDB reads one game.
  *
- * The script stays, and so does the README section about it. MSW fixtures are
+ * The script stays, and so does the docs section about it. MSW fixtures are
  * written by us against types we declared, so by construction they cannot
  * notice a provider changing its response shape. That is the script's job; this
  * file's job is our own regressions.
@@ -119,7 +119,7 @@ function normalized(query: string): string {
 /**
  * The TTL is private to `cached-provider.ts`, so this spec names it
  * independently — a test that read the constant would agree with a typo in it.
- * 30 days is what the README documents and what the comment on `SEARCH_TTL_MS`
+ * 30 days is what docs/design/metadata.md documents and what the comment on `SEARCH_TTL_MS`
  * explains: slow enough that re-running searches doesn't burn the free tier,
  * finite so a query that matched nothing isn't wrong forever.
  */

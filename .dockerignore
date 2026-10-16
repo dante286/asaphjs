@@ -13,6 +13,7 @@ npm-debug.log*
 uploads
 
 README.md
+docs
 Dockerfile
 .dockerignore
 docker-compose.yml

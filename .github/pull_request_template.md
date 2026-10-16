@@ -44,7 +44,7 @@ before and after, a case you exercised in the browser.
 
 - [ ] **Migration** generated with `npm run db:generate` and committed (never hand-written), or: no schema change
 - [ ] **`npm run db:seed`** required for new/changed templates — note that `createCollection()` copies field defs onto the collection row, so existing shelves keep the columns they were made with; adding a field to one is a manual custom-field add
-- [ ] **New env var** documented in `README.md` + `.env.example`, and passed through `docker-compose.yml` (Compose reads top-level `.env`, not `.env.local`)
+- [ ] **New env var** documented in `docs/self-hosting.md` (the configuration table) + `.env.example`, and passed through `docker-compose.yml` (Compose reads top-level `.env`, not `.env.local`)
 - [ ] **`PAYLOAD_SCHEMA_VERSION` bumped** because a provider changed which canonical keys it returns — hydrates never expire, so stale rows only refetch on a version bump
 - [ ] **New provider image host** added to the `mirrorCover` allowlist in `src/lib/metadata/cover-mirror.ts` — a missing host fails the check silently and leaves the item hotlinked
-- [ ] **`README.md` updated** — it's this project's design-rationale document, not just setup instructions
+- [ ] **Docs updated** — the design note under `docs/design/` for the feature, plus `docs/user-guide.md` for anything a user sees; `README.md` only if the overview or quickstart changed

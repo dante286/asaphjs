@@ -4,7 +4,7 @@ import { readUpload } from "@/lib/uploads/files";
 /**
  * Deliberately unauthenticated: covers are rendered by `<img>` on public share
  * pages (`/s/:token`), which carry no session. The random filename is the
- * capability — see the uploads note in the README.
+ * capability — see docs/design/uploads.md.
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
