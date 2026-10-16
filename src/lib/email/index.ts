@@ -2,3 +2,4 @@
 // nodemailer; templates (one per caller) live beside this file.
 export { emailConfigured } from "./config";
 export { sendEmail, type EmailMessage, type SendOutcome } from "./send";
+export { inviteEmail } from "./invite";

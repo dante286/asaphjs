@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/db/client";
 import { collectionMembers, collections, user } from "@/db/schema";
@@ -49,6 +49,32 @@ export async function listMembers(collectionId: string) {
     .where(eq(collectionMembers.collectionId, collectionId));
 }
 
+/**
+ * How long an invite link works, counted from `invitedAt`. Exported because the
+ * invite email states it, and a message promising a different window from the
+ * one `acceptInvite` enforces would be wrong the first time anyone relied on it.
+ */
+export const INVITE_TTL_DAYS = 14;
+
+/** No timestamp counts as expired — the safe direction for something that grants access. */
+export function inviteExpired(invitedAt: Date | string | null, now = Date.now()): boolean {
+  const sent = invitedAt ? new Date(invitedAt).getTime() : 0;
+  return now - sent > INVITE_TTL_DAYS * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * Invites an address, or re-invites one with a pending invite: a fresh token, a
+ * fresh `invitedAt` and the role asked for this time, so re-inviting is how an
+ * owner resends — the old link dies and the 14 days start over.
+ *
+ * An address that has already accepted is left alone, and its row comes back
+ * as it stands — `acceptedAt` set — which is how a caller tells the two apart.
+ * Re-inviting used to clear `acceptedAt`, revoking the member's access until
+ * they accepted again; once invites send mail that reads as "I typed their
+ * address in again and they lost access and got an email". Their role has its
+ * own control. The `setWhere` makes the skip part of the upsert itself, so an
+ * accept landing between a read and a write can't slip past it.
+ */
 export async function inviteMember(params: {
   collectionId: string;
   invitedEmail: string;
@@ -72,11 +98,22 @@ export async function inviteMember(params: {
         inviteToken,
         invitedBy: params.invitedBy,
         invitedAt: new Date(),
-        acceptedAt: null,
       },
+      setWhere: isNull(collectionMembers.acceptedAt),
     })
     .returning();
-  return row;
+  if (row) return row;
+
+  // The conflict was an accepted member, so nothing was written.
+  const existing = await db.query.collectionMembers.findFirst({
+    where: and(
+      eq(collectionMembers.collectionId, params.collectionId),
+      eq(collectionMembers.invitedEmail, params.invitedEmail.toLowerCase()),
+    ),
+  });
+  // Only if they were removed in the instant between the two statements.
+  if (!existing) throw new Error("That member changed while inviting them. Try again.");
+  return existing;
 }
 
 export async function updateMemberRole(
@@ -114,9 +151,7 @@ export async function acceptInvite(token: string, acceptingUserId: string, accep
   if (invite.invitedEmail.toLowerCase() !== acceptingEmail.toLowerCase()) {
     return { ok: false as const, reason: "email_mismatch" as const };
   }
-  // 14-day expiry from invitedAt
-  const invitedAt = invite.invitedAt ? new Date(invite.invitedAt).getTime() : 0;
-  if (Date.now() - invitedAt > 14 * 24 * 60 * 60 * 1000) {
+  if (inviteExpired(invite.invitedAt)) {
     return { ok: false as const, reason: "expired" as const };
   }
 

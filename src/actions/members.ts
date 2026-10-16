@@ -4,8 +4,11 @@ import { nanoid } from "nanoid";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
+import { inviteEmail, sendEmail } from "@/lib/email";
+import { requestOrigin } from "@/lib/request-origin";
 import { resolveRole } from "@/db/queries/members";
 import {
+  INVITE_TTL_DAYS,
   acceptInvite,
   inviteMember,
   removeMember,
@@ -18,11 +21,28 @@ async function requireOwner(collectionId: string, userId: string) {
   if (role !== "owner") throw new Error("Only the owner can manage sharing.");
 }
 
+/**
+ * What became of the invite email. The invite itself exists in every case but
+ * `already_member` — mail is how the link travels, not what makes it valid.
+ */
+export type InviteEmailOutcome = "sent" | "not_configured" | "failed";
+
+export type InviteResult =
+  | { ok: false; reason: "already_member" }
+  | {
+      ok: true;
+      invitedEmail: string;
+      role: "viewer" | "editor";
+      /** Absolute, for the card's Copy link: the fallback when mail didn't go. */
+      inviteUrl: string;
+      email: InviteEmailOutcome;
+    };
+
 export async function inviteMemberAction(
   collectionId: string,
   email: string,
   role: "viewer" | "editor",
-) {
+): Promise<InviteResult> {
   const session = await requireSession();
   await requireOwner(collectionId, session.user.id);
 
@@ -32,12 +52,37 @@ export async function inviteMemberAction(
     role,
     invitedBy: session.user.id,
   });
+  // Already accepted: the query left them as they were, and there's nothing to
+  // send — their access never lapsed.
+  if (member.acceptedAt) return { ok: false, reason: "already_member" };
 
-  // Stub email adapter — no real provider wired up yet.
-  console.log(
-    `[dev email stub] invite link for ${member.invitedEmail}: /invite/${member.inviteToken}`,
-  );
-  return member;
+  // Absolute, and from the host this request arrived on — the same reason as
+  // the share link: the image carries no origin of its own.
+  const inviteUrl = `${await requestOrigin()}/invite/${member.inviteToken}`;
+  const collection = await getCollectionById(collectionId);
+
+  let outcome: InviteEmailOutcome;
+  try {
+    outcome = await sendEmail(
+      inviteEmail({
+        to: member.invitedEmail,
+        inviterName: session.user.name || session.user.email,
+        collectionName: collection?.name ?? "a collection",
+        role,
+        url: inviteUrl,
+        expiresInDays: INVITE_TTL_DAYS,
+      }),
+    );
+  } catch (err) {
+    // The row stays. It's a working invite whether or not mail went out, and
+    // rolling it back over an SMTP outage would make the owner start again for
+    // no reason — the card offers the link to copy instead. The operator still
+    // needs the cause, which the owner can't see.
+    console.error(`[email] invite to ${member.invitedEmail} wasn't sent:`, err);
+    outcome = "failed";
+  }
+
+  return { ok: true, invitedEmail: member.invitedEmail, role, inviteUrl, email: outcome };
 }
 
 export async function updateMemberRoleAction(

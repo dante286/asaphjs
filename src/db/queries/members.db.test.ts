@@ -117,10 +117,14 @@ describe("inviteMember", () => {
     expect(row.inviteToken).toHaveLength(24);
   });
 
-  it("re-inviting the same address replaces the invite rather than adding one", async () => {
+  it("re-inviting a pending address re-issues the invite rather than adding one", async () => {
     const guest = await createTestUser();
     const first = await invite(guest.email, "viewer");
-    await acceptInvite(first, guest.id, guest.email);
+    // Most of the way to expiry, so a refreshed clock is visible.
+    await db
+      .update(collectionMembers)
+      .set({ invitedAt: new Date(Date.now() - 13 * 24 * 60 * 60 * 1000) })
+      .where(eq(collectionMembers.inviteToken, first));
 
     const reinvited = await inviteMember({
       collectionId,
@@ -129,13 +133,36 @@ describe("inviteMember", () => {
       invitedBy: owner.id,
     });
 
-    // A fresh token and acceptance cleared: re-inviting is how an owner
-    // re-issues a link, so the old one has to stop working.
+    // Re-inviting is how an owner resends: a fresh token, the 14 days started
+    // over, the role asked for this time — and the old link dead.
     expect(reinvited.role).toBe("editor");
-    expect(reinvited.acceptedAt).toBeNull();
     expect(reinvited.inviteToken).not.toBe(first);
+    expect(Date.now() - reinvited.invitedAt!.getTime()).toBeLessThan(60_000);
     expect(await listMembers(collectionId)).toHaveLength(1);
-    expect(await resolveRole(collectionId, guest.id)).toBeNull();
+    expect(await acceptInvite(first, guest.id, guest.email)).toEqual({ ok: false, reason: "not_found" });
+    expect(await acceptInvite(reinvited.inviteToken!, guest.id, guest.email)).toMatchObject({ ok: true });
+  });
+
+  it("re-inviting an accepted member leaves their membership as it was", async () => {
+    const guest = await createTestUser();
+    const token = await invite(guest.email, "editor");
+    await acceptInvite(token, guest.id, guest.email);
+    const [before] = await listMembers(collectionId);
+
+    const again = await inviteMember({
+      collectionId,
+      invitedEmail: guest.email,
+      role: "viewer",
+      invitedBy: owner.id,
+    });
+
+    // This used to clear acceptedAt, which quietly revoked their access until
+    // they accepted again. Now the row comes back untouched, acceptance and all,
+    // which is how the caller knows not to send an invite.
+    expect(again.acceptedAt).toEqual(before.acceptedAt);
+    expect(again).toMatchObject({ role: "editor", inviteToken: null });
+    expect(await listMembers(collectionId)).toEqual([before]);
+    expect(await resolveRole(collectionId, guest.id)).toBe("editor");
   });
 });
 

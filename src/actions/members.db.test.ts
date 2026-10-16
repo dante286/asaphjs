@@ -25,6 +25,15 @@ vi.mock("next/headers", async () => {
 const nextCache = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock("next/cache", () => nextCache);
 
+// The transport is `sendEmail`'s own spec's business (send.test.ts drives a real
+// nodemailer client). Here it's the seam the action calls, so a spec can say
+// what was sent and make the send fail; the template stays real.
+const mail = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock("@/lib/email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/email")>()),
+  sendEmail: mail.send,
+}));
+
 const actions = await import("./members");
 
 let owner: TestUser;
@@ -33,16 +42,25 @@ let collectionId: string;
 
 beforeEach(async () => {
   nextCache.refresh.mockClear();
+  mail.send.mockReset().mockResolvedValue("sent");
   owner = await createTestUser();
   editor = await createTestUser();
   const collection = await aCollection({ ownerId: owner.id });
   collectionId = collection.id;
 
   signedInAs(owner);
-  const invite = await actions.inviteMemberAction(collectionId, editor.email, "editor");
-  await signedInAsAndAccept(editor, invite.inviteToken!);
+  const invite = await invited(editor.email, "editor");
+  await signedInAsAndAccept(editor, invite.token);
   signedInAs(owner);
+  mail.send.mockClear();
 });
+
+/** Invite as whoever is signed in, and expect an invite rather than `already_member`. */
+async function invited(email: string, role: "viewer" | "editor") {
+  const result = await actions.inviteMemberAction(collectionId, email, role);
+  if (!result.ok) throw new Error(`expected an invite, got ${result.reason}`);
+  return { ...result, token: result.inviteUrl.split("/invite/")[1] };
+}
 
 async function signedInAsAndAccept(user: TestUser, token: string) {
   signedInAs(user);
@@ -55,10 +73,10 @@ async function signedInAsAndAccept(user: TestUser, token: string) {
 
 describe("inviteMemberAction", () => {
   it("stores a lowercased, trimmed address with a token", async () => {
-    const member = await actions.inviteMemberAction(collectionId, "  Guest@Example.TEST  ", "viewer");
+    const invite = await invited("  Guest@Example.TEST  ", "viewer");
 
-    expect(member).toMatchObject({ invitedEmail: "guest@example.test", role: "viewer" });
-    expect(member.inviteToken).toHaveLength(24);
+    expect(invite).toMatchObject({ invitedEmail: "guest@example.test", role: "viewer" });
+    expect(invite.token).toHaveLength(24);
   });
 
   it("refuses an editor", async () => {
@@ -69,6 +87,7 @@ describe("inviteMemberAction", () => {
       "Only the owner can manage sharing.",
     );
     expect(await listMembers(collectionId)).toHaveLength(1);
+    expect(mail.send).not.toHaveBeenCalled();
   });
 
   it("refuses a stranger", async () => {
@@ -86,6 +105,82 @@ describe("inviteMemberAction", () => {
     await expect(actions.inviteMemberAction(collectionId, "guest@asaph.test", "viewer")).rejects.toMatchObject({
       digest: expect.stringContaining("NEXT_REDIRECT"),
     });
+  });
+});
+
+describe("inviteMemberAction: the email", () => {
+  it("mails the invitee an absolute link, naming the inviter, collection, role and expiry", async () => {
+    const invite = await invited("guest@asaph.test", "editor");
+
+    // No Host header reaches this spec, so requestOrigin falls back to loopback.
+    // What matters is that the link is absolute: it's pasted into a mail client.
+    const url = `http://localhost:3000/invite/${invite.token}`;
+    expect(invite).toMatchObject({ email: "sent", inviteUrl: url });
+    expect(mail.send).toHaveBeenCalledOnce();
+    const message = mail.send.mock.calls[0][0];
+    const collection = await getCollectionById(collectionId);
+    expect(message.to).toBe("guest@asaph.test");
+    expect(message.subject).toBe(`${owner.name} shared ${collection!.name} with you`);
+    expect(message.text).toContain(url);
+    expect(message.text).toContain("view and edit");
+    // The same window acceptInvite enforces.
+    expect(message.text).toContain("expires in 14 days");
+    expect(message.html).toContain(`href="${url}"`);
+  });
+
+  it("says so when the instance has no mail configured", async () => {
+    mail.send.mockResolvedValue("not_configured");
+
+    const invite = await invited("guest@asaph.test", "viewer");
+
+    // The card tells the owner to copy the link — which is the truth.
+    expect(invite.email).toBe("not_configured");
+  });
+
+  it("keeps a working invite when the send fails", async () => {
+    mail.send.mockRejectedValue(new Error("535 5.7.3 Authentication unsuccessful"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const guest = await createTestUser();
+
+    const invite = await invited(guest.email, "viewer");
+
+    // Rolling the row back over an SMTP outage would throw away an invite that
+    // works and make the owner start over. The owner hears "failed"; the
+    // operator, who can fix it, gets the cause.
+    expect(invite.email).toBe("failed");
+    expect(logged.mock.calls[0]).toEqual([
+      expect.stringContaining(guest.email),
+      expect.objectContaining({ message: "535 5.7.3 Authentication unsuccessful" }),
+    ]);
+    await signedInAsAndAccept(guest, invite.token);
+    expect(await resolveRole(collectionId, guest.id)).toBe("viewer");
+    logged.mockRestore();
+  });
+
+  it("re-inviting a pending address mails a fresh link and kills the old one", async () => {
+    const guest = await createTestUser();
+    const first = await invited(guest.email, "viewer");
+
+    const second = await invited(guest.email, "viewer");
+
+    // That's resend: the upsert mints a new token, so the second email's link
+    // is the only one that works.
+    expect(second.token).not.toBe(first.token);
+    expect(mail.send).toHaveBeenCalledTimes(2);
+    expect(mail.send.mock.calls[1][0].text).toContain(second.inviteUrl);
+    signedInAs(guest);
+    await expect(actions.acceptInviteAction(first.token)).rejects.toThrow("Invite not found.");
+    await signedInAsAndAccept(guest, second.token);
+  });
+
+  it("leaves an accepted member's access alone and sends nothing", async () => {
+    const result = await actions.inviteMemberAction(collectionId, editor.email, "viewer");
+
+    // Re-inviting used to clear acceptedAt, so typing a member's address in
+    // again revoked their access — and with mail, would also have emailed them.
+    expect(result).toEqual({ ok: false, reason: "already_member" });
+    expect(mail.send).not.toHaveBeenCalled();
+    expect(await resolveRole(collectionId, editor.id)).toBe("editor");
   });
 });
 
@@ -203,10 +298,10 @@ describe("rotateShareTokenAction", () => {
 describe("acceptInviteAction", () => {
   it("lands the accepting user on the collection they were given", async () => {
     const guest = await createTestUser();
-    const invite = await actions.inviteMemberAction(collectionId, guest.email, "viewer");
+    const invite = await invited(guest.email, "viewer");
     signedInAs(guest);
 
-    const error = await actions.acceptInviteAction(invite.inviteToken!).catch((e: unknown) => e);
+    const error = await actions.acceptInviteAction(invite.token).catch((e: unknown) => e);
 
     const collection = await getCollectionById(collectionId);
     expect((error as { digest: string }).digest).toBe(
@@ -218,12 +313,12 @@ describe("acceptInviteAction", () => {
   it("refuses an invite addressed to someone else", async () => {
     const guest = await createTestUser();
     const interloper = await createTestUser();
-    const invite = await actions.inviteMemberAction(collectionId, guest.email, "viewer");
+    const invite = await invited(guest.email, "viewer");
     signedInAs(interloper);
 
     // A leaked link must not admit whoever opens it — the address the owner
     // named is the whole authorization.
-    await expect(actions.acceptInviteAction(invite.inviteToken!)).rejects.toThrow(
+    await expect(actions.acceptInviteAction(invite.token)).rejects.toThrow(
       "This invite was sent to a different email address.",
     );
     expect(await resolveRole(collectionId, interloper.id)).toBeNull();
@@ -238,27 +333,27 @@ describe("acceptInviteAction", () => {
 
   it("reports an expired invite as expired", async () => {
     const guest = await createTestUser();
-    const invite = await actions.inviteMemberAction(collectionId, guest.email, "viewer");
+    const invite = await invited(guest.email, "viewer");
     const { db } = await import("@/db/client");
     const { collectionMembers } = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
     await db
       .update(collectionMembers)
       .set({ invitedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) })
-      .where(eq(collectionMembers.inviteToken, invite.inviteToken!));
+      .where(eq(collectionMembers.inviteToken, invite.token));
     signedInAs(guest);
 
-    await expect(actions.acceptInviteAction(invite.inviteToken!)).rejects.toThrow(
+    await expect(actions.acceptInviteAction(invite.token)).rejects.toThrow(
       "This invite has expired.",
     );
   });
 
   it("needs a session, since the invite is bound to an account", async () => {
     const guest = await createTestUser();
-    const invite = await actions.inviteMemberAction(collectionId, guest.email, "viewer");
+    const invite = await invited(guest.email, "viewer");
     signedOut();
 
-    await expect(actions.acceptInviteAction(invite.inviteToken!)).rejects.toMatchObject({
+    await expect(actions.acceptInviteAction(invite.token)).rejects.toMatchObject({
       digest: expect.stringContaining("NEXT_REDIRECT"),
     });
     expect(await resolveRole(collectionId, guest.id)).toBeNull();
