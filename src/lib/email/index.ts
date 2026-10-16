@@ -3,3 +3,4 @@
 export { emailConfigured } from "./config";
 export { sendEmail, type EmailMessage, type SendOutcome } from "./send";
 export { inviteEmail } from "./invite";
+export { passwordResetEmail } from "./password-reset";

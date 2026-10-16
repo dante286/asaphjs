@@ -3,6 +3,7 @@ import { nextCookies } from "better-auth/next-js";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/client";
 import { deleteUploadsForOwner } from "@/db/queries/collections";
+import { passwordResetAvailable, RESET_TOKEN_TTL_SECONDS, sendResetPasswordEmail } from "./password-reset";
 import { signupsAllowed } from "./signups";
 
 export const auth = betterAuth({
@@ -18,6 +19,15 @@ export const auth = betterAuth({
     // Server Action and `/api/auth/sign-up/email` reject on the same check and
     // can't drift apart. Rejects 400 EMAIL_PASSWORD_SIGN_UP_DISABLED.
     disableSignUp: !signupsAllowed(),
+    // Wired in only when it can work (mail configured, BETTER_AUTH_URL set —
+    // see password-reset.ts for why the link can't come from the request).
+    // Absent, `/request-password-reset` answers RESET_PASSWORD_DISABLED, and
+    // /auth doesn't offer the link. Read once, like `disableSignUp`.
+    sendResetPassword: passwordResetAvailable() ? sendResetPasswordEmail : undefined,
+    resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
+    // A reset is often the answer to a compromised account, so it ends every
+    // session, not just the ones on devices the person still has.
+    revokeSessionsOnPasswordReset: true,
   },
   user: {
     additionalFields: {
