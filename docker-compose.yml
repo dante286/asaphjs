@@ -13,6 +13,8 @@ services:
       # Optional: without it the app still works (every auth path is a Server
       # Action), but Better Auth warns at boot and /api/auth/* answers 403
       # INVALID_ORIGIN. Compose knows where it publishes, so it may as well say.
+      # Password reset links are built from it, so behind a real domain set it
+      # to that, or reset emails point at localhost.
       BETTER_AUTH_URL: http://localhost:3000
       UPLOADS_DIR: /app/uploads
       # `false` closes registration. Compose reads this from `.env` (not
