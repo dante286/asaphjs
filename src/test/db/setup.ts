@@ -45,6 +45,18 @@ process.env.IGDB_CLIENT_SECRET = "";
 process.env.TMDB_API_KEY = "";
 
 /**
+ * Same for mail, and for the same reason with more at stake: `.env.local` may
+ * hold a real SMTP login, and `auth.ts` decides at module evaluation whether
+ * password reset sends anything. A spec that wants mail stubs these itself and
+ * mocks `sendEmail`; nothing in this tier talks to a real server.
+ */
+process.env.SMTP_HOST = "";
+process.env.SMTP_PORT = "";
+process.env.SMTP_USER = "";
+process.env.SMTP_PASSWORD = "";
+process.env.EMAIL_FROM = "";
+
+/**
  * Cover deletes are part of what the query layer does — `deleteItem`,
  * `deleteCollection`, `rollbackImportBatch` and `deleteUploadsForOwner` all
  * unlink files — so these specs write real ones. Per worker, so two workers
