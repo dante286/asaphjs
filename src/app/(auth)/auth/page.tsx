@@ -1,17 +1,18 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
+import { passwordResetAvailable } from "@/lib/auth/password-reset";
 import { signupsAllowed } from "@/lib/auth/signups";
 import { AuthForm } from "@/components/auth/AuthForm";
 
 export default async function AuthPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; reset?: string }>;
 }) {
   const session = await getSession();
   if (session) redirect("/");
 
-  const { next } = await searchParams;
+  const { next, reset } = await searchParams;
 
   return (
     <div
@@ -62,7 +63,12 @@ export default async function AuthPage({
 
         {/* getSession() reads headers(), so this page is dynamic and
             ALLOW_SIGNUPS is read per request rather than frozen into a build. */}
-        <AuthForm next={next || "/"} allowSignups={signupsAllowed()} />
+        <AuthForm
+          next={next || "/"}
+          allowSignups={signupsAllowed()}
+          allowReset={passwordResetAvailable()}
+          passwordWasReset={reset === "done"}
+        />
       </div>
     </div>
   );
