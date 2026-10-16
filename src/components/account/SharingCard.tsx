@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { Dialog } from "@/components/ui/Dialog";
 import {
+  type InviteResult,
   inviteMemberAction,
   removeMemberAction,
   rotateShareTokenAction,
@@ -16,7 +17,33 @@ export type MemberRow = {
   role: string;
   userName: string | null;
   acceptedAt: string | Date | null;
+  /**
+   * A pending invite's link, absolute and built on the server like `shareUrl`.
+   * Null once accepted, and once expired — inviting again mints a fresh one.
+   */
+  inviteUrl: string | null;
+  expired: boolean;
 };
+
+/** What the owner is told after Invite, keyed by what happened to the email. */
+function inviteNotice(result: InviteResult, email: string): { text: string; warn: boolean } {
+  if (!result.ok) {
+    // Re-inviting used to reset an accepted member and revoke their access;
+    // now the query leaves them be, and this says why nothing happened.
+    return { text: `${email} already has access — change their role in the list above.`, warn: false };
+  }
+  switch (result.email) {
+    case "sent":
+      return { text: `Invite sent to ${email}.`, warn: false };
+    case "not_configured":
+      return {
+        text: "Invite saved. This instance doesn't send email, so copy the link below and send it yourself.",
+        warn: false,
+      };
+    case "failed":
+      return { text: "Invite saved, but the email didn't send — copy the link below instead.", warn: true };
+  }
+}
 
 export function SharingCard({
   collectionId,
@@ -49,6 +76,8 @@ export function SharingCard({
   const [rotateOpen, setRotateOpen] = useState(false);
   const [rotated, setRotated] = useState(false);
   const [rotateError, setRotateError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; warn: boolean } | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState<string | null>(null);
 
   function togglePublic() {
     const next = !shareEnabled;
@@ -76,15 +105,40 @@ export function SharingCard({
 
   function invite() {
     if (!inviteEmail.trim()) return;
-    const email = inviteEmail.trim();
+    const email = inviteEmail.trim().toLowerCase();
+    setNotice(null);
     startTransition(async () => {
-      await inviteMemberAction(collectionId, email, inviteRole);
-      setMembers((prev) => [
-        ...prev.filter((m) => m.invitedEmail !== email.toLowerCase()),
-        { invitedEmail: email.toLowerCase(), role: inviteRole, userName: null, acceptedAt: null },
-      ]);
+      let result: InviteResult;
+      try {
+        result = await inviteMemberAction(collectionId, email, inviteRole);
+      } catch {
+        setNotice({ text: `Couldn't invite ${email}. Try again.`, warn: true });
+        return;
+      }
+      setNotice(inviteNotice(result, email));
+      if (result.ok) {
+        const invited = result;
+        setMembers((prev) => [
+          ...prev.filter((m) => m.invitedEmail !== invited.invitedEmail),
+          {
+            invitedEmail: invited.invitedEmail,
+            role: invited.role,
+            userName: null,
+            acceptedAt: null,
+            inviteUrl: invited.inviteUrl,
+            expired: false,
+          },
+        ]);
+      }
       setInviteEmail("");
     });
+  }
+
+  function copyInvite(m: MemberRow) {
+    if (!m.inviteUrl) return;
+    navigator.clipboard.writeText(m.inviteUrl);
+    setCopiedInvite(m.invitedEmail);
+    setTimeout(() => setCopiedInvite((current) => (current === m.invitedEmail ? null : current)), 1500);
   }
 
   function changeRole(email: string, role: "viewer" | "editor" | "remove") {
@@ -179,7 +233,15 @@ export function SharingCard({
               {(m.userName ?? m.invitedEmail).slice(0, 2).toUpperCase()}
             </span>
             <span style={{ minWidth: 0 }}>{m.invitedEmail}</span>
-            <span className="tag tag-neutral">{m.acceptedAt ? "Accepted" : "Invited"}</span>
+            <span className="tag tag-neutral">{m.acceptedAt ? "Accepted" : m.expired ? "Expired" : "Invited"}</span>
+            {/* On every pending invite, mail or no mail: it's how sharing works on an
+                instance with no SMTP, and the way round a spam folder or a typo. */}
+            {m.inviteUrl && (
+              <button className="btn btn-ghost" style={{ fontSize: 12 }} type="button" onClick={() => copyInvite(m)}>
+                {copiedInvite === m.invitedEmail ? "Copied" : "Copy invite link"}
+              </button>
+            )}
+            {m.expired && <span style={{ fontSize: 11.5, color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>Invite again to send a new link.</span>}
             <select
               className="input"
               value={m.role}
@@ -220,6 +282,11 @@ export function SharingCard({
           Invite
         </button>
       </div>
+      {notice && (
+        <span role="status" style={{ fontSize: 12, marginTop: -10, color: notice.warn ? "#b5544a" : "var(--color-accent-700)" }}>
+          {notice.text}
+        </span>
+      )}
 
       {rotateOpen && (
         <Dialog

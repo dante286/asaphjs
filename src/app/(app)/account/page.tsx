@@ -1,7 +1,7 @@
 import { requireSession, getSession } from "@/lib/auth/session";
 import { requestOrigin } from "@/lib/request-origin";
 import { listCollectionsForUser } from "@/db/queries/collections";
-import { listMembers } from "@/db/queries/members";
+import { inviteExpired, listMembers } from "@/db/queries/members";
 import { ProfileForm } from "@/components/account/ProfileForm";
 import { SecurityPanel } from "@/components/account/SecurityPanel";
 import { CollectionSettingsCard } from "@/components/account/CollectionSettingsCard";
@@ -74,12 +74,21 @@ export default async function AccountPage() {
           itemCount={row.itemCount}
           shareEnabled={row.collection.shareEnabled}
           shareUrl={row.collection.shareToken ? `${origin}/s/${row.collection.shareToken}` : null}
-          members={members.map((m) => ({
-            invitedEmail: m.invitedEmail,
-            role: m.role,
-            userName: m.userName,
-            acceptedAt: m.acceptedAt,
-          }))}
+          members={members.map((m) => {
+            // A pending invite's link, built here for the same reason as
+            // shareUrl. None once accepted (the token is burned) or expired
+            // (copying a dead link helps nobody; inviting again mints a new one).
+            const pending = !m.acceptedAt && m.inviteToken !== null;
+            const expired = pending && inviteExpired(m.invitedAt);
+            return {
+              invitedEmail: m.invitedEmail,
+              role: m.role,
+              userName: m.userName,
+              acceptedAt: m.acceptedAt,
+              inviteUrl: pending && !expired ? `${origin}/invite/${m.inviteToken}` : null,
+              expired,
+            };
+          })}
         />
       ))}
       {sharingCards.length === 0 && (
@@ -88,8 +97,10 @@ export default async function AccountPage() {
         </p>
       )}
       <p style={{ fontSize: 11.5, color: "color-mix(in srgb, var(--color-text) 55%, transparent)", marginTop: -16, marginBottom: 26 }}>
-        People you invite sign in to their own account and see this collection alongside their
-        own — the collection stays private, and borrower notes stay hidden on public links only.
+        People you invite open their link — emailed, or copied from here — signed in to their own
+        account, and see this collection alongside their own. Inviting a pending address again
+        sends a fresh link and retires the old one. The collection stays private, and borrower
+        notes stay hidden on public links only.
       </p>
 
       <h6 style={{ marginBottom: 10 }}>Data</h6>
