@@ -96,7 +96,7 @@ describe("tlsMode: the port decides, unless the host is loopback", () => {
   it.each([
     ["smtp.resend.com", 465, "implicit"],
     ["smtp.resend.com", 587, "starttls"],
-    // Resend's fallback for hosts that block 587 — the README points there,
+    // Resend's fallback for hosts that block 587 — docs/email.md points there,
     // not at 2465, which is implicit TLS on a port this rule doesn't know.
     ["smtp.resend.com", 2587, "starttls"],
     ["smtp.example.com", 25, "starttls"],

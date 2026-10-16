@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * The smoke tier. Four specs, one browser, and the only tier that needs a
- * running server — see the "The smoke tier" section of the README for what
+ * running server — see "The smoke tier" in docs/testing.md for what
  * belongs here and, more to the point, what doesn't.
  *
  * Two ways to run it, one suite:
