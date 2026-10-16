@@ -274,6 +274,7 @@ workflow can do for you.
 | `npm run db:seed -- --demo` | Same, plus the two demo accounts, their collections, and the sharing fixtures |
 | `npm run lookup:check` | Prove the metadata cache spares the provider's free tier (see below) |
 | `npm run covers:backfill` | Mirror already-matched items' provider covers (dry run; `-- --apply` writes) |
+| `npm run email:test -- --address you@example.com` | Send one real test message through `sendEmail` (see [Sending email](#sending-email)) |
 
 ## Tests
 
@@ -1071,6 +1072,17 @@ EMAIL_FROM=Asaph <asaph@mail.example.com>
 some cloud providers do for outbound mail on new accounts, use **`2587`** (STARTTLS).
 Don't use `2465`: it's implicit TLS on a port Asaph doesn't recognise as such, so Asaph
 would wait for a plaintext greeting that never comes and time out after 10 seconds.
+
+To check the setup end to end before anything depends on it, send yourself one message:
+
+```bash
+npm run email:test -- --address you@example.com
+```
+
+It goes through `sendEmail`, the same path invites and resets take. It prints the server,
+TLS mode and SMTP user it used, and exits non-zero if mail isn't configured, since the
+console fallback would otherwise make it "pass" without sending anything. Each run counts
+against the quota below.
 
 Three things that will otherwise look like bugs:
 

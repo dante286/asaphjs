@@ -20,7 +20,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed/run.ts",
     "lookup:check": "tsx scripts/check-lookup-cache.ts",
-    "covers:backfill": "tsx scripts/backfill-covers.ts"
+    "covers:backfill": "tsx scripts/backfill-covers.ts",
+    "email:test": "tsx scripts/email-test.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.1",
