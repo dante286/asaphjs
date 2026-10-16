@@ -154,6 +154,8 @@ export default defineConfig({
         "src/lib/uploads/store.ts",
         "src/lib/csv/parse.ts",
         "src/lib/auth/signups.ts",
+        "src/lib/email/config.ts",
+        "src/lib/email/send.ts",
         "src/lib/format.ts",
         "src/lib/request-origin.ts",
         "src/db/queries/collections.ts",
