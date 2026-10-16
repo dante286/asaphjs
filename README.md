@@ -216,6 +216,9 @@ it — but two things change:
 - The `/api/auth/*` REST endpoints reject with `403 INVALID_ORIGIN`, because the origin
   allowlist Better Auth builds from `baseURL` is empty. Nothing in Asaph calls them — the UI
   is Server Actions throughout — so this only bites if you're scripting against them.
+- [Password reset](#password-reset-by-email) isn't offered, even with mail set up. Its link
+  is built from `BETTER_AUTH_URL` and nothing else, because building it from the request's
+  host is how reset links get hijacked.
 
 Set it and both go away:
 
@@ -634,6 +637,63 @@ says as much when the flag is set rather than sending them to `/auth` to find th
 Sharing on a closed instance means everyone you share with has an account you made while
 registration was open.
 
+### Password reset by email
+
+"Forgot password?" on `/auth` asks for an address and mails a link to `/auth/reset`, where
+the person picks a new password. Both steps are Server Actions calling Better Auth's
+`requestPasswordReset` and `resetPassword`, the same way `signUpAction` calls
+`signUpEmail`, so nothing about tokens is reimplemented. The token lasts an hour and works
+once. Setting a new password signs out **every** session the account had
+(`revokeSessionsOnPasswordReset`), since a reset is often the answer to someone else being
+signed in. The person then signs in with the new password, on this device too.
+
+**Only offered when it can work: mail configured *and* `BETTER_AUTH_URL` set.** Without
+both, `sendResetPassword` isn't passed to `betterAuth()`, so Better Auth's endpoint answers
+`RESET_PASSWORD_DISABLED`, and `/auth` shows no link. That's the `ALLOW_SIGNUPS` rule again:
+a feature that can't work shouldn't be something you find out about by filling in a form.
+On such an instance the way back into a locked account is the operator, as it always was.
+Like `disableSignUp`, it's decided once at startup.
+
+**Why `BETTER_AUTH_URL`, when share and invite links use the request's own origin.**
+`requestOrigin()` reads `Host` and `X-Forwarded-Host`, and whoever sends a request chooses
+those. Suppose someone asks for a reset of *your* address with a forged host. A link built
+from the request would put your live token on their domain, and one click hands them your
+account. Invite links don't have this problem, because an invite token only works when
+accepted by the account it names. A reset token *is* the account. So the origin has to come
+from the operator, and `BETTER_AUTH_URL` is the variable they already set. Better Auth hands
+`sendResetPassword` a ready-made `url` as well. That's ignored: it points at Better Auth's
+own `/api/auth/reset-password/:token` redirect hop, and the page that takes the password is
+ours. The Compose file sets `BETTER_AUTH_URL=http://localhost:3000`. Change it to your public
+origin, or reset emails will send people to localhost.
+
+**The same answer for every address.** "If that address has an account, a link is on its
+way" whether it has one or not, whether the email was held back, and whether the send
+failed. Anything else would make the form a way to find out who has an account. Better Auth
+already answers an unknown address with its success message and simulates the lookup to
+blunt timing differences. The action doesn't undo that on the way out. A failed send is
+logged for the operator and never shown.
+
+**One email a minute per address, on both entry points.** Better Auth rate-limits
+`/request-password-reset` to 3 a minute, but that limiter only runs for HTTP requests to
+`/api/auth/*`. A Server Action calls `auth.api.*` directly and never meets it. Without a
+check of our own, anyone could make the instance send an unlimited stream of reset emails
+to any address, spending the operator's send quota (Resend's free plan is 100 a day) and
+flooding the inbox. The check is in `sendResetPassword` (`shouldSendReset` in
+`src/db/queries/password-reset.ts`) rather than in the action, because that callback is the
+one place both the action and the HTTP route pass through. By then Better Auth has written
+the new token's row. If an earlier `reset-password:` row for the same user exists from the
+last 60 seconds, nothing is sent and the new row is deleted, so the only live links are ones
+somebody was actually sent. "Earlier" is by `createdAt`, then id. That way two overlapping
+requests agree on which one sends. Counting *any* other row would have each hold the other
+back, and a double-clicked button would send nothing. Deleting held-back rows keeps the
+window anchored to the last email that went out, so a loop of requests gets one email a
+minute through rather than locking the real owner out for as long as it runs.
+
+Not here: changing an email address, email verification, an admin-initiated reset, and a
+general IP-based limiter for Server Actions. A reset signs out every session, but a device's
+five-minute session cookie cache (`session.cookieCache`) can still read as signed in until
+it lapses. The same is true of "Sign out everywhere".
+
 ### Deleting an account sweeps its uploads first
 
 The Security section of `/account` has a Delete account action. It asks for the password —
@@ -1015,7 +1075,7 @@ in `src/lib/email/`. Nothing else in the app touches nodemailer, so a test swaps
 transport at that seam and an HTTP-API provider, if one is ever wanted, changes that one
 directory. Collection invites are sent through it (see
 [Invites are emailed, and their links can be copied](#invites-are-emailed-and-their-links-can-be-copied)).
-Password reset will be. Better Auth's verification hook is the one call site still printing
+So is [password reset](#password-reset-by-email). Better Auth's verification hook is the one call site still printing
 a `[dev email stub]` line.
 
 **It's optional.** With `SMTP_HOST` or `EMAIL_FROM` unset, `emailConfigured()` is false

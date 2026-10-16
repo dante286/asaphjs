@@ -110,3 +110,43 @@ describe("registration", () => {
     });
   });
 });
+
+describe("password reset", () => {
+  function resetCode(auth: Awaited<ReturnType<typeof freshAuth>>) {
+    return auth.api
+      .requestPasswordReset({ body: { email: "anyone@asaph.test" } })
+      .then(() => "offered")
+      .catch((e: { body?: { code?: string } }) => e.body?.code);
+  }
+
+  function mailConfigured() {
+    vi.stubEnv("SMTP_HOST", "smtp.asaph.test");
+    vi.stubEnv("EMAIL_FROM", "asaph@asaph.test");
+  }
+
+  it("is off without mail", async () => {
+    vi.stubEnv("BETTER_AUTH_URL", "https://asaph.example.com");
+    const auth = await freshAuth();
+
+    expect(await resetCode(auth)).toBe("RESET_PASSWORD_DISABLED");
+  });
+
+  it("is off with mail but no BETTER_AUTH_URL to build the link from", async () => {
+    // Not a fallback to the request's host: that's the header a forger picks.
+    mailConfigured();
+    vi.stubEnv("BETTER_AUTH_URL", undefined);
+    const auth = await freshAuth();
+
+    expect(await resetCode(auth)).toBe("RESET_PASSWORD_DISABLED");
+  });
+
+  it("is on with both", async () => {
+    // An address with no account, so this proves the endpoint answers without
+    // anything being sent.
+    mailConfigured();
+    vi.stubEnv("BETTER_AUTH_URL", "https://asaph.example.com");
+    const auth = await freshAuth();
+
+    expect(await resetCode(auth)).toBe("offered");
+  });
+});
