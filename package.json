@@ -30,7 +30,7 @@
     "drizzle-orm": "^0.45.4",
     "nanoid": "^6.0.2",
     "next": "16.4.2",
-    "nodemailer": "^10.1.1",
+    "nodemailer": "^10.1.4",
     "papaparse": "^5.7.0",
     "pg": "^8.23.1",
     "react": "19.3.1",
