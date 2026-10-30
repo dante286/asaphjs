@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { passwordResetAvailable, resetLinkOrigin } from "./password-reset";
+import { passwordResetAvailable } from "./password-reset";
 
 const VARS = ["BETTER_AUTH_URL", "SMTP_HOST", "EMAIL_FROM"];
 
@@ -9,33 +9,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
-});
-
-describe("resetLinkOrigin", () => {
-  it("is the origin of BETTER_AUTH_URL", () => {
-    vi.stubEnv("BETTER_AUTH_URL", "https://asaph.example.com");
-
-    expect(resetLinkOrigin()).toBe("https://asaph.example.com");
-  });
-
-  it("drops a path or trailing slash, since the reset page lives at the root", () => {
-    vi.stubEnv("BETTER_AUTH_URL", " https://asaph.example.com/api/auth/ ");
-
-    expect(resetLinkOrigin()).toBe("https://asaph.example.com");
-  });
-
-  it("is null when unset, so there's no falling back to the request's own host", () => {
-    // The fallback is the vulnerability: a forged Host or X-Forwarded-Host would
-    // put a live reset token on someone else's domain.
-    expect(resetLinkOrigin()).toBeNull();
-  });
-
-  it("is null for something that isn't an http(s) URL", () => {
-    for (const value of ["asaph.example.com", "javascript:alert(1)", "ftp://asaph.example.com"]) {
-      vi.stubEnv("BETTER_AUTH_URL", value);
-      expect(resetLinkOrigin()).toBeNull();
-    }
-  });
 });
 
 describe("passwordResetAvailable", () => {

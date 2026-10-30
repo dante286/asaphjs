@@ -131,11 +131,17 @@ seeded with `npm run db:seed -- --demo`, the `demo@example.com` account already 
 a usable way in, so a demo instance can be closed straight away — change its password first,
 since the seed's is published in these docs.
 
-**Invites only work for people who already have an account.** An invite token doesn't
-authorize a registration, so with signups closed an invited person with no account cannot
-accept. Sharing on a closed instance means everyone you share with has an account you made
-while registration was open. There is no admin screen for creating users: to add someone,
-open registration, let them sign up, and close it again.
+**Letting someone in without opening registration.** With signups closed, `/account` has an
+**Invite someone** card: enter an address, and Asaph emails it a link that lets that address
+create an account, once, within 14 days. Anyone signed in can invite, up to five pending
+invites each. The card only appears when it can work: mail configured *and*
+`BETTER_AUTH_URL` set, since the link is built from it and is only proof of the inbox because
+it was emailed — there's no copy-link fallback. Without mail, the way to add someone is still
+to open registration, let them sign up, and close it again.
+[Accounts and sign-in](design/accounts.md#inviting-someone-to-register) has the details.
+
+Collection invites (from Sharing) are separate, and still need an account: on a closed
+instance, someone you share a collection with needs a registration invite first.
 
 ## Password reset
 

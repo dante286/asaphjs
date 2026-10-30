@@ -2,7 +2,7 @@
 
 Asaph authenticates with email and password through Better Auth, with sessions stored in
 the same Postgres as everything else. There is no external identity provider. This page is
-the reasoning behind the account lifecycle: who may register, how a forgotten password is
+the reasoning behind the account lifecycle: who may register, how someone is invited to, how a forgotten password is
 recovered, and what deleting an account takes with it. For the operator's checklist, see
 [Self-hosting](../self-hosting.md#closing-registration).
 
@@ -40,13 +40,84 @@ seeded with `npm run db:seed -- --demo`, the `demo@example.com` account describe
 already exists and is a usable way in, so a demo instance can be closed straight away — change
 its password first, since the seed's is published in these docs.
 
-**Invites only work for people who already have an account.** An invite token doesn't
-authorize a registration. `/invite/:token` sends a signed-out visitor to
-`/auth?next=/invite/:token`, and with signups closed the only thing there is a sign-in form —
-so an invited person with no account cannot accept, and the invite is dead. The invite page
-says as much when the flag is set rather than sending them to `/auth` to find the tab missing.
-Sharing on a closed instance means everyone you share with has an account you made while
-registration was open.
+**Collection invites don't authorize a registration.** `/invite/:token` sends a signed-out
+visitor to `/auth?next=/invite/:token`, and with signups closed the only thing there is a
+sign-in form. So the invite page says, when the flag is set, that it needs an existing account
+and that the way to get one is to ask someone on the instance for an invitation to join —
+the registration invite below, which is a different thing with its own table and its own page.
+
+## Inviting someone to register
+
+With signups closed, the **Invite someone** card on `/account` lets any signed-in user invite
+an address. Asaph emails it a link to `/join/:token`, which shows the address read-only and
+asks for a name and password. The link works once, for that address, for 14 days
+(`INVITE_TTL_DAYS`, shared with collection invites). The rows live in `registration_invites`,
+one per address.
+
+**Why the token, not the address.** `requireEmailVerification` is off, so nothing proves the
+person registering owns the address they type. "An address with a pending invite may
+register" would let anyone who knew or guessed an invited address register as it. So
+registration is gated on holding the token, the one thing that only reached the invited
+inbox. That holds only if every token was actually emailed, which is why the rest of this
+section looks the way it does.
+
+**Only offered when it can work and is needed:** signups closed, mail configured, and
+`BETTER_AUTH_URL` set (`registrationInvitesAvailable`). With signups open there's nothing to
+authorize, and the card would be an email-sending button anyone could reach by registering.
+The actions check the same thing, since a Server Action is a public endpoint whatever the page
+renders. Redeeming doesn't re-check it: an invite sent before mail was turned off is still
+proof of the inbox.
+
+**The link comes from `BETTER_AUTH_URL`, never the request** (`trustedLinkOrigin`). Built
+from `Host`, a signed-in user could invite `victim@` with a forged host, and the victim would
+receive a real token on a link to the attacker's domain. One click hands it over, and the
+attacker registers as them. That's the password reset case below, and it has the same answer.
+
+**No copy-link fallback.** Collection invites offer one, because a collection invite token
+only works for an account that already exists. A copied registration link proves nothing about
+who owns the inbox. When the send fails the invite stays, shown as "Not sent" with Resend
+(`send_failed_at`, cleared by the next send). Keeping it is safe, since the token never reached
+anyone, and it still counts toward the cap until it's resent or revoked. The SMTP error goes to
+the server log.
+
+**The gate is a database hook, and single use rests on `user.email` being unique.**
+`databaseHooks.user.create.before` is described under
+[Closing registration](#closing-registration-on-an-instance). It replaced `disableSignUp`,
+which is all or nothing: with it on, Better Auth's sign-up refuses before anything of ours
+runs, so an invite path would have had to reimplement sign-up — hashing, the credential
+account, the session — beside the real one. The token reaches the hook through the request
+body and is never written to `user`, because Better Auth keeps only declared fields.
+`used_at` is set in `create.after`, which Better Auth queues until the sign-up commits, so a
+failed sign-up never uses up an invite. But single use doesn't depend on that write: an invite
+is bound to one address and `user.email` is unique, so one invite can't make two accounts even
+under concurrent submits. `used_at` is what refuses a replay early and takes the invite off
+the list.
+
+**Inviting is one upsert, and its rules are its `setWhere`.** Re-inviting an address
+refreshes the row — a new token and a new `sent_at` — so the old link dies and the 14 days
+start over. That's also what Resend does. An address with an account is refused; so is one
+with someone else's pending invite, since taking it over would silently free a slot on their
+list and break the link they sent. A revoked or expired one can be taken over. And one address
+gets one email a minute (`INVITE_RESEND_COOLDOWN_SECONDS`), for the reason password reset has
+the same limit: Better Auth's rate limiter never sees a Server Action. Ownership and cooldown
+are conditions on the write itself rather than a read before it, so two quick Resends can't
+both send, and neither can two people inviting one address at once. The cooldown counts from
+the last attempt, sent or not.
+
+**Five pending invites each.** Pending means a token, no `used_at`, and not expired — one
+predicate (`pendingInvite`) shared by the gate, `/join`, the card's list and the cap, so they
+can't disagree. Re-inviting an address on your own list doesn't take another slot. The cap
+needs a count before the write, so both run in one transaction under a per-inviter
+`pg_advisory_xact_lock`, and two quick submits can't make a sixth.
+
+**Revoking clears the token rather than deleting the row.** The link stops working and the
+invite leaves the list and the cap, but `sent_at` stays, so the cooldown still applies to that
+address. Deleting would make revoke-then-invite a way around it. A used invite whose account
+was later deleted is removed when that address is invited again; left alone it would block the
+address forever.
+
+Not here: invite codes not bound to an address, domain allowlists, an admin role, and
+collection invites that authorize a registration.
 
 ## Password reset by email
 
@@ -65,12 +136,13 @@ a feature that can't work shouldn't be something you find out about by filling i
 On such an instance the way back into a locked account is the operator, as it always was.
 Like the registration gate, it's decided once at startup.
 
-**Why `BETTER_AUTH_URL`, when share and invite links use the request's own origin.**
+**Why `BETTER_AUTH_URL`, when share and collection invite links use the request's own origin.**
 `requestOrigin()` reads `Host` and `X-Forwarded-Host`, and whoever sends a request chooses
 those. Suppose someone asks for a reset of *your* address with a forged host. A link built
 from the request would put your live token on their domain, and one click hands them your
-account. Invite links don't have this problem, because an invite token only works when
-accepted by the account it names. A reset token *is* the account. So the origin has to come
+account. Collection invite links don't have this problem, because a collection invite token
+only works when accepted by the account it names. A reset token *is* the account (and so is a
+registration invite token, which uses the same origin; see above). So the origin has to come
 from the operator, and `BETTER_AUTH_URL` is the variable they already set. Better Auth hands
 `sendResetPassword` a ready-made `url` as well. That's ignored: it points at Better Auth's
 own `/api/auth/reset-password/:token` redirect hop, and the page that takes the password is

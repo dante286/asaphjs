@@ -9,9 +9,11 @@ for using an instance. To run one, see [Self-hosting](self-hosting.md).
 Sign up with an email address and password at `/auth`.
 
 If there's no "Create account" option, **registration is closed on this instance**. Whoever
-runs it set it up for themselves or a household, and they'll have to open it for you. An
-invite to a collection doesn't get round this: an invite gives an existing account access
-to a collection, not permission to register.
+runs it set it up for themselves or a household. If it sends email, anyone with an account
+can invite you to join: you'll get a link to `/join/…` that lets your address create an
+account, once, within 14 days. Otherwise they'll have to open registration for you. An
+invite to a *collection* doesn't get round this: it gives an existing account access to a
+collection, not permission to register.
 
 ### Forgotten passwords
 
@@ -207,6 +209,25 @@ leaked address to replace it. Renaming a collection doesn't change its public li
   delete your account.
 - **Export:** download your collections as CSV or JSON.
 - **Collections:** rename or delete each collection you own, and its sharing settings.
+- **Invite someone:** on an instance closed to registration that sends email, invite people
+  to create an account. See below.
+
+### Inviting someone to join
+
+When registration is closed and the instance sends email, `/account` has an **Invite
+someone** card. Enter an address and Asaph emails it a link that lets that address create an
+account, once, within **14 days**. The card lists your invites that are still waiting; one
+drops off once it's used or expires.
+
+- **Resend** sends a fresh link, and the old one stops working. You can send to an address
+  at most once a minute.
+- **Revoke** stops the link working straight away.
+- **Not sent** means the email failed. Try Resend; there's no link to copy instead, because
+  the link only proves who owns the inbox if it arrived there.
+
+You can have up to **five** invites waiting at once. You can't invite an address that already
+has an account, or one someone else here has already invited (until theirs expires or they
+revoke it).
 
 ### Deleting your account
 

@@ -1,0 +1,1 @@
+ALTER TABLE "registration_invites" ADD COLUMN "send_failed_at" timestamp with time zone;

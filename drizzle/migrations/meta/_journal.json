@@ -50,6 +50,13 @@
       "when": 1793376026700,
       "tag": "0006_registration_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793377924812,
+      "tag": "0007_registration_invite_send_failed",
+      "breakpoints": true
     }
   ]
 }
