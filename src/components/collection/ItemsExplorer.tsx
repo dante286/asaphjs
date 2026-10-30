@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SaveStatusIndicator, type SaveStatus } from "@/components/collection/SaveStatusIndicator";
@@ -20,6 +20,16 @@ import {
   type ItemDraft,
   type ItemsPage,
 } from "@/lib/api/items-client";
+import {
+  firstPageData,
+  flattenRows,
+  mapRows,
+  nextPageParam,
+  prependRow,
+  removeRow,
+  totalOf,
+  type ItemsPages,
+} from "@/lib/api/items-pages";
 import { fetchViewPrefs, saveViewPrefs, type ViewPrefs } from "@/lib/api/view-prefs-client";
 import { buildPatchForField } from "@/lib/fields/item-values";
 import type { FieldDef } from "@/lib/fields/field-def";
@@ -133,14 +143,17 @@ export function ItemsExplorer({
 
   const queryKey = ["items", collectionId, { q, verifiedOnly, lentOnly }] as const;
 
-  const { data } = useQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery<ItemsPage, Error, ItemsPages, typeof queryKey, number>({
     queryKey,
-    queryFn: () => fetchItems(collectionId, { q, verifiedOnly, lentOnly }),
-    initialData: !q && !verifiedOnly && !lentOnly ? initialData : undefined,
+    queryFn: ({ pageParam }) => fetchItems(collectionId, { q, verifiedOnly, lentOnly }, pageParam),
+    initialPageParam: 1,
+    getNextPageParam: nextPageParam,
+    initialData: !q && !verifiedOnly && !lentOnly ? firstPageData(initialData) : undefined,
     placeholderData: (prev) => prev,
   });
 
-  const items = data?.rows ?? [];
+  const items = useMemo(() => flattenRows(data), [data]);
+  const total = totalOf(data);
 
   const patchMutation = useMutation({
     mutationFn: async ({ item, patch }: { item: Item; patch: ReturnType<typeof buildPatchForField> }) =>
@@ -148,33 +161,26 @@ export function ItemsExplorer({
     onMutate: async ({ item, patch }) => {
       setSaveStatus({ kind: "saving" });
       await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<ItemsPage>(queryKey);
-      queryClient.setQueryData<ItemsPage | undefined>(queryKey, (old) =>
-        old
-          ? {
-              ...old,
-              rows: old.rows.map((row) =>
-                row.id === item.id ? { ...row, ...(patch as Partial<Item>), values: { ...row.values, ...(patch.values ?? {}) } } : row,
-              ),
-            }
-          : old,
+      const previous = queryClient.getQueryData<ItemsPages>(queryKey);
+      queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) =>
+        mapRows(old, (row) =>
+          row.id === item.id ? { ...row, ...(patch as Partial<Item>), values: { ...row.values, ...(patch.values ?? {}) } } : row,
+        ),
       );
       return { previous };
     },
     onError: (err, _vars, context) => {
       if (context?.previous) queryClient.setQueryData(queryKey, context.previous);
       if (err instanceof ConflictError) {
-        queryClient.setQueryData<ItemsPage | undefined>(queryKey, (old) =>
-          old
-            ? { ...old, rows: old.rows.map((row) => (row.id === err.current.id ? (err.current as unknown as Item) : row)) }
-            : old,
+        queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) =>
+          mapRows(old, (row) => (row.id === err.current.id ? (err.current as unknown as Item) : row)),
         );
       }
       setSaveStatus({ kind: "error" });
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData<ItemsPage | undefined>(queryKey, (old) =>
-        old ? { ...old, rows: old.rows.map((row) => (row.id === updated.id ? updated : row)) } : old,
+      queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) =>
+        mapRows(old, (row) => (row.id === updated.id ? updated : row)),
       );
       setSaveStatus({ kind: "saved", at: new Date() });
     },
@@ -186,9 +192,7 @@ export function ItemsExplorer({
     // the point of the dialog is that you never have to go hunting for what you
     // just added.
     onSuccess: (item) => {
-      queryClient.setQueryData<ItemsPage | undefined>(queryKey, (old) =>
-        old ? { ...old, rows: [item, ...old.rows], total: old.total + 1 } : old,
-      );
+      queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) => prependRow(old, item));
     },
   });
 
@@ -196,10 +200,8 @@ export function ItemsExplorer({
     mutationFn: (item: Item) => deleteItemRequest(collectionId, item.id),
     onMutate: async (item) => {
       await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<ItemsPage>(queryKey);
-      queryClient.setQueryData<ItemsPage | undefined>(queryKey, (old) =>
-        old ? { ...old, rows: old.rows.filter((r) => r.id !== item.id), total: old.total - 1 } : old,
-      );
+      const previous = queryClient.getQueryData<ItemsPages>(queryKey);
+      queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) => removeRow(old, item.id));
       return { previous };
     },
     onError: (_err, _item, context) => {
@@ -226,10 +228,12 @@ export function ItemsExplorer({
     }
   }
 
+  // Until the last page is in, say how much of the collection is on screen, so
+  // a 2,000-item footer under 60 rows doesn't read as rows gone missing.
   const rowCountLabel = useMemo(() => {
-    const total = data?.total ?? 0;
-    return `${total} item${total === 1 ? "" : "s"}`;
-  }, [data?.total]);
+    const noun = `item${total === 1 ? "" : "s"}`;
+    return hasNextPage ? `${items.length} of ${total} ${noun}` : `${total} ${noun}`;
+  }, [items.length, total, hasNextPage]);
 
   return (
     <div>
@@ -316,6 +320,10 @@ export function ItemsExplorer({
         />
       )}
 
+      {hasNextPage && (
+        <LoadMore onLoadMore={fetchNextPage} loading={isFetchingNextPage} />
+      )}
+
       {canEdit && createOpen && (
         <CreateItemDialog
           onClose={() => setCreateOpen(false)}
@@ -325,6 +333,38 @@ export function ItemsExplorer({
           lookup={lookup}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Fetches the next page as this scrolls into view, with a margin so the next
+ * rows are usually in before the bottom is reached. The button does the same
+ * for keyboard and screen-reader users, or anywhere the observer never fires.
+ */
+function LoadMore({ onLoadMore, loading }: { onLoadMore: () => unknown; loading: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || loading) return;
+    // Re-observed after every page lands: if the sentinel is still on screen
+    // (a tall viewport, a short page), the fresh observer fires again at once.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onLoadMore();
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loading, onLoadMore]);
+
+  return (
+    <div ref={ref} style={{ display: "flex", justifyContent: "center", padding: "20px 0 8px" }}>
+      <button type="button" className="btn btn-secondary" onClick={() => onLoadMore()} disabled={loading} aria-busy={loading}>
+        {loading ? "Loading…" : "Load more"}
+      </button>
     </div>
   );
 }
