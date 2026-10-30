@@ -10,6 +10,8 @@ import { importCsvIntoNewCollectionAction } from "@/actions/imports";
 import { FIELD_TYPES, slugifyFieldLabel, type FieldDef, type FieldType } from "@/lib/fields/field-def";
 import { guessFieldsFromRows } from "@/lib/fields/type-guess";
 import type { ParsedCsv } from "@/lib/csv/parse";
+import { csvTooLargeMessage } from "@/lib/csv/limits";
+import { exceedsActionBodyLimit, toCsvPayload } from "@/lib/csv/payload";
 
 type TemplateOption = {
   key: string;
@@ -105,14 +107,21 @@ export function CreateCollectionWizard({ templates }: { templates: TemplateOptio
               return [header, field ? field.id : "__skip"];
             }),
           );
-          await importCsvIntoNewCollectionAction({
+          const payload = toCsvPayload(csv);
+          if (exceedsActionBodyLimit(payload)) {
+            setError(csvTooLargeMessage());
+            return;
+          }
+          // Only returns when the import was refused; success redirects.
+          const res = await importCsvIntoNewCollectionAction({
             name: name.trim(),
             fields,
             mapping,
-            rows: csv.rows,
+            csv: payload,
             defaultView,
             features: { verified: trackVerified, lending: trackLending },
           });
+          if (res) setError(res.error);
         } else {
           await createCollectionAction({
             name: name.trim(),

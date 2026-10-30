@@ -5,6 +5,7 @@ import { acceptInvite, inviteMember } from "@/db/queries/members";
 import { aCollection, createTestUser, type TestUser } from "@/test/db/fixtures";
 import { signedInAs, signedOut } from "@/test/db/session";
 import type { FieldDef } from "@/lib/fields/field-def";
+import type { CsvPayload } from "@/lib/csv/payload";
 
 /**
  * The two ends of a CSV import: making a collection out of a file, and adding
@@ -33,6 +34,23 @@ const ROWS = [
   { Title: "Earthbound", Console: "SNES", Copies: "1" },
 ];
 
+/** The wire shape the wizard sends, built from keyed rows so these read as a CSV would. */
+function csvOf(rows: Record<string, string>[]): CsvPayload {
+  const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  return { headers, rows: rows.map((row) => ({ cells: headers.map((header) => row[header] ?? "") })) };
+}
+
+/** Six 1MB titles: a file over the cap without six megabytes of fixture. */
+const OVERSIZED = csvOf(
+  Array.from({ length: 6 }, (_, i) => ({ Title: String(i).repeat(1024 * 1024) })),
+);
+
+async function importInto(input: Parameters<typeof actions.importCsvIntoCollectionAction>[0]) {
+  const result = await actions.importCsvIntoCollectionAction(input);
+  if ("error" in result) throw new Error(result.error);
+  return result;
+}
+
 let owner: TestUser;
 
 beforeEach(async () => {
@@ -47,7 +65,7 @@ describe("importCsvIntoNewCollectionAction", () => {
         name: "Video Games",
         fields: FIELDS,
         mapping: MAPPING,
-        rows: ROWS,
+        csv: csvOf(ROWS),
       })
       .catch((e: unknown) => e);
 
@@ -67,7 +85,7 @@ describe("importCsvIntoNewCollectionAction", () => {
         name: "Video Games",
         fields: FIELDS,
         mapping: MAPPING,
-        rows: [...ROWS, { Title: "   ", Console: "SNES" }],
+        csv: csvOf([...ROWS, { Title: "   ", Console: "SNES" }]),
       })
       .catch((e: unknown) => e);
 
@@ -82,7 +100,7 @@ describe("importCsvIntoNewCollectionAction", () => {
         name: "Video Games",
         fields: FIELDS,
         mapping: MAPPING,
-        rows: [],
+        csv: csvOf([]),
         defaultView: "table",
         features: { lending: true },
       })
@@ -105,9 +123,23 @@ describe("importCsvIntoNewCollectionAction", () => {
         name: "Video Games",
         fields: [{ id: "title", label: "Title", type: "not-a-type" } as unknown as FieldDef],
         mapping: MAPPING,
-        rows: ROWS,
+        csv: csvOf(ROWS),
       }),
     ).rejects.toThrow();
+  });
+
+  it("turns away a file over the cap before creating anything", async () => {
+    // The picker checks the file first, but the action is a public endpoint;
+    // the refusal comes back as a value so production builds keep the message.
+    const result = await actions.importCsvIntoNewCollectionAction({
+      name: "Video Games",
+      fields: FIELDS,
+      mapping: MAPPING,
+      csv: OVERSIZED,
+    });
+
+    expect(result).toEqual({ error: "CSV files are capped at 5 MB." });
+    expect(await getCollectionForUser(owner.id, "video-games")).toBeNull();
   });
 
   it("needs a session", async () => {
@@ -118,7 +150,7 @@ describe("importCsvIntoNewCollectionAction", () => {
         name: "Video Games",
         fields: FIELDS,
         mapping: MAPPING,
-        rows: ROWS,
+        csv: csvOf(ROWS),
       }),
     ).rejects.toMatchObject({ digest: expect.stringContaining("NEXT_REDIRECT") });
   });
@@ -133,11 +165,11 @@ describe("importCsvIntoCollectionAction", () => {
   });
 
   it("imports the rows and reports what happened", async () => {
-    const result = await actions.importCsvIntoCollectionAction({
+    const result = await importInto({
       collectionId,
       fields: FIELDS,
       mapping: MAPPING,
-      rows: ROWS,
+      csv: csvOf(ROWS),
     });
 
     expect(result).toMatchObject({ inserted: 2, errors: [] });
@@ -156,7 +188,7 @@ describe("importCsvIntoCollectionAction", () => {
       collectionId,
       fields: withRegion,
       mapping: { ...MAPPING, Region: "region" },
-      rows: [{ Title: "Chrono Trigger", Region: "NTSC" }],
+      csv: csvOf([{ Title: "Chrono Trigger", Region: "NTSC" }]),
     });
 
     const collection = await getCollectionById(collectionId);
@@ -166,15 +198,28 @@ describe("importCsvIntoCollectionAction", () => {
   });
 
   it("reports a bad row rather than failing the file", async () => {
-    const result = await actions.importCsvIntoCollectionAction({
+    const result = await importInto({
       collectionId,
       fields: FIELDS,
       mapping: MAPPING,
-      rows: [{ Title: "Chrono Trigger" }, { Title: "" }, { Title: "Earthbound" }],
+      csv: csvOf([{ Title: "Chrono Trigger" }, { Title: "" }, { Title: "Earthbound" }]),
     });
 
     expect(result.inserted).toBe(2);
     expect(result.errors).toEqual([{ row: 2, message: "Missing title — row skipped." }]);
+  });
+
+  it("turns away a file over the cap, and writes neither fields nor rows", async () => {
+    const result = await actions.importCsvIntoCollectionAction({
+      collectionId,
+      fields: [...FIELDS, { id: "extra", label: "Extra", type: "text", order: 3, origin: "csv" }],
+      mapping: MAPPING,
+      csv: OVERSIZED,
+    });
+
+    expect(result).toEqual({ error: "CSV files are capped at 5 MB." });
+    expect((await getCollectionById(collectionId))?.fields).toEqual(FIELDS);
+    expect((await listItems({ collectionId })).total).toBe(0);
   });
 
   it("lets an editor import", async () => {
@@ -189,11 +234,11 @@ describe("importCsvIntoCollectionAction", () => {
     signedInAs(editor);
 
     // Filling a shelf is what an editor is for.
-    const result = await actions.importCsvIntoCollectionAction({
+    const result = await importInto({
       collectionId,
       fields: FIELDS,
       mapping: MAPPING,
-      rows: ROWS,
+      csv: csvOf(ROWS),
     });
 
     expect(result.inserted).toBe(2);
@@ -211,7 +256,7 @@ describe("importCsvIntoCollectionAction", () => {
     signedInAs(viewer);
 
     await expect(
-      actions.importCsvIntoCollectionAction({ collectionId, fields: FIELDS, mapping: MAPPING, rows: ROWS }),
+      actions.importCsvIntoCollectionAction({ collectionId, fields: FIELDS, mapping: MAPPING, csv: csvOf(ROWS) }),
     ).rejects.toThrow("Not authorized.");
     expect((await listItems({ collectionId })).total).toBe(0);
   });
@@ -225,7 +270,7 @@ describe("importCsvIntoCollectionAction", () => {
         collectionId,
         fields: [{ id: "hijacked", label: "Hijacked", type: "text", order: 0, origin: "csv" }],
         mapping: { Title: "hijacked" },
-        rows: [{ Title: "Chrono Trigger" }],
+        csv: csvOf([{ Title: "Chrono Trigger" }]),
       }),
     ).rejects.toThrow("Not authorized.");
 
@@ -245,17 +290,17 @@ describe("rollbackImportBatchAction", () => {
   });
 
   it("undoes one batch and leaves the others", async () => {
-    const kept = await actions.importCsvIntoCollectionAction({
+    const kept = await importInto({
       collectionId,
       fields: FIELDS,
       mapping: MAPPING,
-      rows: [{ Title: "Kept" }],
+      csv: csvOf([{ Title: "Kept" }]),
     });
-    const undone = await actions.importCsvIntoCollectionAction({
+    const undone = await importInto({
       collectionId,
       fields: FIELDS,
       mapping: MAPPING,
-      rows: ROWS,
+      csv: csvOf(ROWS),
     });
 
     await actions.rollbackImportBatchAction(collectionId, undone.batchId);
@@ -266,11 +311,11 @@ describe("rollbackImportBatchAction", () => {
   });
 
   it("refuses a viewer", async () => {
-    const result = await actions.importCsvIntoCollectionAction({
+    const result = await importInto({
       collectionId,
       fields: FIELDS,
       mapping: MAPPING,
-      rows: ROWS,
+      csv: csvOf(ROWS),
     });
     const viewer = await createTestUser();
     const invite = await inviteMember({
@@ -292,11 +337,11 @@ describe("rollbackImportBatchAction", () => {
     // The batch id isn't checked against the collection, so the guard is doing
     // all the work here — a caller has to be able to write to the collection
     // they name.
-    const result = await actions.importCsvIntoCollectionAction({
+    const result = await importInto({
       collectionId,
       fields: FIELDS,
       mapping: MAPPING,
-      rows: ROWS,
+      csv: csvOf(ROWS),
     });
     const stranger = await createTestUser();
     signedInAs(stranger);

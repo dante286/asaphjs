@@ -8,6 +8,8 @@ import { importCsvIntoCollectionAction, rollbackImportBatchAction } from "@/acti
 import { guessColumnType } from "@/lib/fields/type-guess";
 import { slugifyFieldLabel, type FieldDef } from "@/lib/fields/field-def";
 import type { ParsedCsv } from "@/lib/csv/parse";
+import { csvTooLargeMessage } from "@/lib/csv/limits";
+import { exceedsActionBodyLimit, toCsvPayload } from "@/lib/csv/payload";
 
 const SKIP = "__skip";
 const NEW = "__new";
@@ -78,6 +80,11 @@ export function ImportWizard({
         return [header, choice];
       }),
     );
+    const payload = toCsvPayload(csv);
+    if (exceedsActionBodyLimit(payload)) {
+      setError(csvTooLargeMessage());
+      return;
+    }
 
     startTransition(async () => {
       try {
@@ -85,9 +92,10 @@ export function ImportWizard({
           collectionId,
           fields: finalFields,
           mapping,
-          rows: csv.rows,
+          csv: payload,
         });
-        setResult(res);
+        if ("error" in res) setError(res.error);
+        else setResult(res);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Import failed.");
       }

@@ -34,6 +34,13 @@ const FIXED_COLUMNS: Record<string, "verified" | "borrower" | "notes"> = {
   comments: "notes",
 };
 
+/**
+ * Postgres takes at most 65,535 bind parameters per statement, and an item row
+ * binds about seven, so one INSERT for a whole file breaks somewhere past 9,000
+ * rows. A 5MB CSV can hold 40,000.
+ */
+const INSERT_CHUNK_ROWS = 500;
+
 export type CommitImportParams = {
   collectionId: string;
   fields: FieldDef[];
@@ -94,14 +101,17 @@ export async function commitImport(params: CommitImportParams) {
     });
   });
 
-  if (toInsert.length > 0) {
-    await db.insert(items).values(toInsert);
-  }
-
-  await db
-    .update(importBatches)
-    .set({ status: "committed", errorReport: errors })
-    .where(eq(importBatches.id, batch.id));
+  // One transaction, so a chunk that fails takes the ones before it with it and
+  // the batch stays "staged" rather than half-imported.
+  await db.transaction(async (tx) => {
+    for (let start = 0; start < toInsert.length; start += INSERT_CHUNK_ROWS) {
+      await tx.insert(items).values(toInsert.slice(start, start + INSERT_CHUNK_ROWS));
+    }
+    await tx
+      .update(importBatches)
+      .set({ status: "committed", errorReport: errors })
+      .where(eq(importBatches.id, batch.id));
+  });
 
   return { batchId: batch.id, inserted: toInsert.length, errors };
 }

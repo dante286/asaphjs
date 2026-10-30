@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Blueprint } from "@/components/ui/Blueprint";
+import { MAX_CSV_BYTES, MAX_CSV_MB, csvTooLargeMessage } from "@/lib/csv/limits";
 import { parseCsvText, type ParsedCsv } from "@/lib/csv/parse";
 
 export function CsvDropzone({ onParsed }: { onParsed: (csv: ParsedCsv, fileName: string) => void }) {
@@ -12,6 +13,11 @@ export function CsvDropzone({ onParsed }: { onParsed: (csv: ParsedCsv, fileName:
   async function handleFile(file: File) {
     if (!file.name.toLowerCase().endsWith(".csv")) {
       setError("Please choose a .csv file.");
+      return;
+    }
+    // Checked before reading, so an oversized file is never parsed or sent.
+    if (file.size > MAX_CSV_BYTES) {
+      setError(csvTooLargeMessage(file.size));
       return;
     }
     try {
@@ -71,7 +77,7 @@ export function CsvDropzone({ onParsed }: { onParsed: (csv: ParsedCsv, fileName:
         <div style={{ fontFamily: "var(--font-heading)", fontSize: 15 }}>Start from a CSV</div>
         <div style={{ fontSize: 11.5, color: "color-mix(in srgb, var(--color-text) 60%, transparent)", marginTop: 2 }}>
           Drop a file or click to browse. Its headers become the collection&rsquo;s fields, with
-          types guessed per column.
+          types guessed per column. Up to {MAX_CSV_MB} MB.
         </div>
         {error && <div style={{ fontSize: 11.5, color: "#b5544a", marginTop: 6 }}>{error}</div>}
       </div>
