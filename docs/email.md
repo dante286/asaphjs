@@ -5,7 +5,9 @@ in `src/lib/email/`. Nothing else in the app touches nodemailer, so a test swaps
 transport at that seam and an HTTP-API provider, if one is ever wanted, changes that one
 directory. Collection invites are sent through it (see
 [Invites are emailed, and their links can be copied](design/sharing.md#invites-are-emailed-and-their-links-can-be-copied)).
-So is [password reset](design/accounts.md#password-reset-by-email). Better Auth's verification hook is the one call site still printing
+So are [password reset](design/accounts.md#password-reset-by-email) and
+[invitations to register](design/accounts.md#inviting-someone-to-register), whose links are
+built from `BETTER_AUTH_URL` rather than the request. Better Auth's verification hook is the one call site still printing
 a `[dev email stub]` line.
 
 **It's optional.** With `SMTP_HOST` or `EMAIL_FROM` unset, `emailConfigured()` is false

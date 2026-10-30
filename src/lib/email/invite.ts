@@ -1,3 +1,4 @@
+import { escapeHtml } from "./escape";
 import type { EmailMessage } from "./send";
 
 /**
@@ -45,13 +46,4 @@ export function inviteEmail(params: {
       "<p style=\"color:#777\">If you weren't expecting this, you can ignore it.</p>",
     ].join("\n"),
   };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }

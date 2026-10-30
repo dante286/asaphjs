@@ -22,13 +22,15 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           </>
         ) : (
           <>
-            {/* An invite doesn't authorize a registration, so with signups closed
-                it only works for someone who already has an account — say so here
-                rather than sending them to /auth to find the tab missing. */}
+            {/* A collection invite doesn't authorize a registration — that's a
+                registration invite, sent from /account — so with signups closed it
+                only works for someone who already has an account. Say so here, and
+                how to get one, rather than sending them to /auth to find the tab
+                missing. */}
             <p style={{ fontSize: 14 }}>
               {signupsAllowed()
                 ? "Sign in or create an account with the email this invite was sent to."
-                : "Sign in with the account this invite was sent to. This instance isn't accepting new registrations, so the invite needs an account that already exists."}
+                : "Sign in with the account this invite was sent to. This instance isn't open for registration, so if you don't have an account yet, ask someone on it to invite you to join."}
             </p>
             <Link href={`/auth?next=/invite/${token}`} className="btn btn-primary">
               Continue

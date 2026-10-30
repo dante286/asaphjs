@@ -19,4 +19,9 @@ export const registrationInvites = pgTable("registration_invites", {
   invitedBy: text("invited_by").references(() => user.id, { onDelete: "set null" }),
   sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
+  // Set when the email carrying the current token failed to send, and cleared
+  // by the next invite of this address. The card shows the invite as "Not
+  // sent" with Resend; there's no copy-link fallback, since a copied link proves
+  // nothing about who owns the inbox.
+  sendFailedAt: timestamp("send_failed_at", { withTimezone: true }),
 });

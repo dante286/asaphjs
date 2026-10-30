@@ -1,11 +1,18 @@
 import { requireSession, getSession } from "@/lib/auth/session";
 import { requestOrigin } from "@/lib/request-origin";
 import { listCollectionsForUser } from "@/db/queries/collections";
-import { inviteExpired, listMembers } from "@/db/queries/members";
+import { INVITE_TTL_DAYS, inviteExpired, listMembers } from "@/db/queries/members";
+import {
+  INVITE_RESEND_COOLDOWN_SECONDS,
+  MAX_PENDING_INVITES,
+  listPendingInvites,
+} from "@/db/queries/registration-invites";
+import { registrationInvitesAvailable } from "@/lib/auth/registration-invites";
 import { ProfileForm } from "@/components/account/ProfileForm";
 import { SecurityPanel } from "@/components/account/SecurityPanel";
 import { CollectionSettingsCard } from "@/components/account/CollectionSettingsCard";
 import { SharingCard } from "@/components/account/SharingCard";
+import { InviteSomeoneCard } from "@/components/account/InviteSomeoneCard";
 import { DataExportButtons } from "@/components/account/DataExportButtons";
 import { SignOutButton } from "@/components/account/SignOutButton";
 
@@ -20,6 +27,10 @@ export default async function AccountPage() {
   const origin = await requestOrigin();
   const collectionRows = await listCollectionsForUser(session.user.id);
   const owned = collectionRows.filter((r) => r.isOwner);
+
+  // Read per request, like ALLOW_SIGNUPS on /auth: getSession() reads headers(),
+  // so this page is dynamic and none of it is frozen into the build.
+  const pendingInvites = registrationInvitesAvailable() ? await listPendingInvites(session.user.id) : null;
 
   const sharingCards = await Promise.all(
     owned.map(async (row) => ({
@@ -102,6 +113,22 @@ export default async function AccountPage() {
         sends a fresh link and retires the old one. The collection stays private, and borrower
         notes stay hidden on public links only.
       </p>
+
+      {pendingInvites && (
+        <>
+          <h6 style={{ marginBottom: 10 }}>Invite someone</h6>
+          <InviteSomeoneCard
+            invites={pendingInvites.map((invite) => ({
+              email: invite.email,
+              sentAt: invite.sentAt.toISOString(),
+              notSent: invite.sendFailedAt !== null,
+            }))}
+            cooldownSeconds={INVITE_RESEND_COOLDOWN_SECONDS}
+            maxPending={MAX_PENDING_INVITES}
+            expiresInDays={INVITE_TTL_DAYS}
+          />
+        </>
+      )}
 
       <h6 style={{ marginBottom: 10 }}>Data</h6>
       <DataExportButtons />
