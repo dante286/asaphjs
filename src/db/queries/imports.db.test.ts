@@ -190,10 +190,26 @@ describe("commitImport", () => {
     });
   });
 
+  it("imports more rows than one INSERT can bind, all under one batch", async () => {
+    // Postgres caps a statement at 65,535 parameters and an item binds about
+    // seven, so a single INSERT fails past ~9,300 rows. A 5MB file can hold
+    // several times that.
+    const rows = Array.from({ length: 10_000 }, (_, i) => ({ Title: `Game ${i}`, Console: "SNES" }));
+
+    const result = await commit(rows);
+
+    expect(result).toMatchObject({ inserted: 10_000, errors: [] });
+    expect((await listItems({ collectionId })).total).toBe(10_000);
+
+    // And the batch is still one undo.
+    await rollbackImportBatch(result.batchId);
+    expect((await listItems({ collectionId })).total).toBe(0);
+  });
+
   it("commits a batch of nothing rather than failing", async () => {
     const result = await commit([]);
 
-    // An empty insert would be a syntax error, so the guard around it matters;
+    // An empty insert would be a syntax error, so no chunk may be empty;
     // the batch still lands so the UI has something to report against.
     expect(result).toMatchObject({ inserted: 0, errors: [] });
     expect(result.batchId).toBeTruthy();
