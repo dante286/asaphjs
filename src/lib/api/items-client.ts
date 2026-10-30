@@ -30,8 +30,9 @@ export type ItemsQuery = {
   lentOnly?: boolean;
 };
 
-export async function fetchItems(collectionId: string, query: ItemsQuery): Promise<ItemsPage> {
+export async function fetchItems(collectionId: string, query: ItemsQuery, page = 1): Promise<ItemsPage> {
   const params = new URLSearchParams();
+  if (page > 1) params.set("page", String(page));
   if (query.q) params.set("q", query.q);
   if (query.verifiedOnly) params.set("verifiedOnly", "1");
   if (query.lentOnly) params.set("lentOnly", "1");

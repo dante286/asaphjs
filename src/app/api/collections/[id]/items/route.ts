@@ -32,7 +32,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const q = url.searchParams.get("q") ?? undefined;
   const verifiedOnly = url.searchParams.get("verifiedOnly") === "1";
   const lentOnly = url.searchParams.get("lentOnly") === "1";
-  const page = Number(url.searchParams.get("page") ?? "1");
+  // Anything that isn't a positive whole number is the first page, rather than
+  // a NaN or negative offset reaching the query.
+  const requestedPage = Number(url.searchParams.get("page") ?? "1");
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
   const result = await listItems({ collectionId: id, q, verifiedOnly, lentOnly, page });
 
