@@ -28,7 +28,7 @@ process.env.DATABASE_URL = urlFor(DB_NAME);
 process.env.BETTER_AUTH_SECRET ??= "asaph-integration-tier-not-a-real-secret";
 
 /**
- * `auth.ts` reads this at module evaluation to decide `disableSignUp`, and a
+ * `auth.ts` reads this at module evaluation to decide its registration gate, and a
  * developer running an instance with registration closed would otherwise have
  * every user fixture fail with EMAIL_PASSWORD_SIGN_UP_DISABLED.
  */

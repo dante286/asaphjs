@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
+import { findInviteByToken } from "@/db/queries/registration-invites";
 import { auth } from "@/lib/auth/auth";
 import { safeNext } from "@/lib/auth/safe-next";
 
@@ -44,6 +45,55 @@ export async function signUpAction(
   try {
     await auth.api.signUpEmail({ body: { email, password, name: displayName || email } });
   } catch (err) {
+    if (err instanceof APIError) return { error: err.message };
+    return { error: "Sign up failed. Please try again." };
+  }
+
+  redirect("/");
+}
+
+const INVITE_GONE =
+  "This invitation has expired or was already used. Ask whoever invited you to send a new one.";
+
+/**
+ * Registers from a `/join/[token]` invitation. The email comes from the invite
+ * row, never from the form, so through this page an invite can only ever make
+ * the account it was sent to. The gate in `betterAuth()` checks the token again
+ * on the way in; this lookup is only where the address comes from.
+ */
+export async function signUpWithInviteAction(
+  _prevState: AuthActionState,
+  formData: FormData,
+): Promise<AuthActionState> {
+  const token = String(formData.get("token") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+  const displayName = String(formData.get("displayName") ?? "");
+
+  if (password !== confirmPassword) {
+    return { error: "Passwords don't match." };
+  }
+
+  // Pending when the page loaded isn't pending now: it may have been revoked,
+  // used from another tab, or run out while they typed.
+  const invite = await findInviteByToken(token);
+  if (!invite) return { error: INVITE_GONE };
+
+  // Not a declared sign-up field, so it's passed as a variable rather than a
+  // literal the body type would refuse. The gate reads it off the endpoint
+  // context; `parseUserInput` drops it before anything is written.
+  const body = { email: invite.email, password, name: displayName || invite.email, inviteToken: token };
+
+  try {
+    await auth.api.signUpEmail({ body });
+  } catch (err) {
+    // The same thing seen a moment later: the gate refusing a token that went
+    // bad after the lookup above, or a double submit finding the account the
+    // first one made.
+    const code = authErrorCode(err);
+    if (code === "EMAIL_PASSWORD_SIGN_UP_DISABLED" || code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
+      return { error: INVITE_GONE };
+    }
     if (err instanceof APIError) return { error: err.message };
     return { error: "Sign up failed. Please try again." };
   }

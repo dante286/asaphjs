@@ -1,9 +1,10 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { db } from "@/db/client";
 import { createCollection } from "@/db/queries/collections";
-import { templates } from "@/db/schema";
+import { registrationInvites, templates } from "@/db/schema";
 import { auth } from "@/lib/auth/auth";
 import { UPLOAD_URL_PREFIX, thumbNameFor } from "@/lib/uploads/urls";
 import type { FieldDef } from "@/lib/fields/field-def";
@@ -67,6 +68,31 @@ function cookieHeaderFrom(response: Response): string {
     .getSetCookie()
     .map((cookie) => cookie.split(";")[0])
     .join("; ");
+}
+
+let inviteCount = 0;
+
+/**
+ * A `registration_invites` row, inserted directly rather than through the
+ * Invite someone flow: the gate only reads the row, and specs for it shouldn't
+ * depend on the sending UI or on mail. Pending by default; pass `sentAt` or
+ * `usedAt` for the other states.
+ */
+export async function createRegistrationInvite(
+  over: { email?: string; sentAt?: Date; usedAt?: Date; invitedBy?: string } = {},
+) {
+  inviteCount += 1;
+  const [row] = await db
+    .insert(registrationInvites)
+    .values({
+      email: over.email ?? `invited-${process.env.VITEST_POOL_ID ?? "1"}-${inviteCount}@asaph.test`,
+      token: nanoid(24),
+      invitedBy: over.invitedBy,
+      sentAt: over.sentAt,
+      usedAt: over.usedAt,
+    })
+    .returning();
+  return row as typeof row & { token: string };
 }
 
 /**

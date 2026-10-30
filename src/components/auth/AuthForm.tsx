@@ -41,7 +41,7 @@ export function AuthForm({
 
   // With registration closed the sign-up half of the form is never reachable —
   // no segment to switch on it, and `mode` can't be anything but "signin". The
-  // API rejects it too (`disableSignUp`); hiding it here is so a closed door
+  // API rejects it too (the gate in `betterAuth()`); hiding it here is so a closed door
   // isn't something you discover by filling in a form and submitting it.
   const isSignUp = allowSignups && mode === "signup";
   const state = isSignUp ? signUpState : signInState;
