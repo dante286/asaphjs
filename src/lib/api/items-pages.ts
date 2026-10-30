@@ -70,3 +70,12 @@ export function removeRow(data: ItemsPages | undefined, itemId: string): ItemsPa
     })),
   };
 }
+
+/**
+ * Until the last page is in, say how much of the collection is on screen, so a
+ * 2,000-item footer under 60 rows doesn't read as rows gone missing.
+ */
+export function rowCountLabel(loaded: number, total: number, hasMore: boolean): string {
+  const noun = `item${total === 1 ? "" : "s"}`;
+  return hasMore ? `${loaded} of ${total} ${noun}` : `${total} ${noun}`;
+}

@@ -28,6 +28,8 @@ export type ItemsQuery = {
   q?: string;
   verifiedOnly?: boolean;
   lentOnly?: boolean;
+  /** A public share token: the rows come back stripped, as a stranger sees them. */
+  token?: string;
 };
 
 export async function fetchItems(collectionId: string, query: ItemsQuery, page = 1): Promise<ItemsPage> {
@@ -36,6 +38,7 @@ export async function fetchItems(collectionId: string, query: ItemsQuery, page =
   if (query.q) params.set("q", query.q);
   if (query.verifiedOnly) params.set("verifiedOnly", "1");
   if (query.lentOnly) params.set("lentOnly", "1");
+  if (query.token) params.set("token", query.token);
 
   const res = await fetch(`/api/collections/${collectionId}/items?${params.toString()}`);
   if (!res.ok) throw new Error("Failed to load items.");

@@ -39,7 +39,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const result = await listItems({ collectionId: id, q, verifiedOnly, lentOnly, page });
 
-  if (guard.role === "public") {
+  // A request carrying a share token is asking for the public view, so it gets
+  // the public projection even from someone signed in with more access: the
+  // owner opening their own `/s/:token` link sees what a stranger would.
+  if (guard.role === "public" || url.searchParams.has("token")) {
     const collection = await getCollectionById(id);
     return NextResponse.json({
       ...result,

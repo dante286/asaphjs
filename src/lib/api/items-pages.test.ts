@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Item, ItemsPage } from "./items-client";
-import { firstPageData, flattenRows, mapRows, nextPageParam, prependRow, removeRow, totalOf, type ItemsPages } from "./items-pages";
+import { firstPageData, flattenRows, mapRows, nextPageParam, prependRow, removeRow, rowCountLabel, totalOf, type ItemsPages } from "./items-pages";
 
 function item(id: string, over: Partial<Item> = {}): Item {
   return { id, title: id, values: {}, ...over } as Item;
@@ -89,5 +89,13 @@ describe("removeRow", () => {
     const next = removeRow(data, "d")!;
     expect(flattenRows(next).map((r) => r.id)).toEqual(["a", "b", "c"]);
     expect(next.pages.map((p) => p.total)).toEqual([3, 3]);
+  });
+});
+
+describe("rowCountLabel", () => {
+  it("says how much is loaded until the last page is in", () => {
+    expect(rowCountLabel(60, 2000, true)).toBe("60 of 2000 items");
+    expect(rowCountLabel(2000, 2000, false)).toBe("2000 items");
+    expect(rowCountLabel(1, 1, false)).toBe("1 item");
   });
 });

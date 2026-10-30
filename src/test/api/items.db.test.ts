@@ -127,6 +127,17 @@ describe("GET", () => {
     expect(row).toMatchObject({ borrower: "Alex", values: { paid: 220 } });
   });
 
+  it("strips the rows for a signed-in member who asks through a share token", async () => {
+    // The `/s/:token` page pages through this route from the browser, where the
+    // owner may well be signed in. It is still the public view.
+    await createItem({ collectionId, title: "Chrono Trigger", borrower: "Alex", values: { console: "SNES", paid: 220 } });
+
+    const [row] = (await (await get({ cookie: owner.cookie, token: SHARE_TOKEN })).json()).rows;
+
+    expect(row).toMatchObject({ borrower: null, notes: null });
+    expect(row.values).toEqual({ console: "SNES" });
+  });
+
   it("refuses a caller with no access", async () => {
     const stranger = await createTestUser();
 

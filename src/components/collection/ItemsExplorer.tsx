@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Blueprint } from "@/components/ui/Blueprint";
@@ -10,6 +10,7 @@ import { CoversView } from "@/components/collection/CoversView";
 import { TableView } from "@/components/collection/TableView";
 import { ColumnMenu } from "@/components/collection/ColumnMenu";
 import { CreateItemDialog } from "@/components/collection/CreateItemDialog";
+import { LoadMore } from "@/components/collection/LoadMore";
 import {
   ConflictError,
   createItemRequest,
@@ -27,6 +28,7 @@ import {
   nextPageParam,
   prependRow,
   removeRow,
+  rowCountLabel as describeRowCount,
   totalOf,
   type ItemsPages,
 } from "@/lib/api/items-pages";
@@ -228,12 +230,7 @@ export function ItemsExplorer({
     }
   }
 
-  // Until the last page is in, say how much of the collection is on screen, so
-  // a 2,000-item footer under 60 rows doesn't read as rows gone missing.
-  const rowCountLabel = useMemo(() => {
-    const noun = `item${total === 1 ? "" : "s"}`;
-    return hasNextPage ? `${items.length} of ${total} ${noun}` : `${total} ${noun}`;
-  }, [items.length, total, hasNextPage]);
+  const rowCountLabel = describeRowCount(items.length, total, hasNextPage);
 
   return (
     <div>
@@ -333,38 +330,6 @@ export function ItemsExplorer({
           lookup={lookup}
         />
       )}
-    </div>
-  );
-}
-
-/**
- * Fetches the next page as this scrolls into view, with a margin so the next
- * rows are usually in before the bottom is reached. The button does the same
- * for keyboard and screen-reader users, or anywhere the observer never fires.
- */
-function LoadMore({ onLoadMore, loading }: { onLoadMore: () => unknown; loading: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || loading) return;
-    // Re-observed after every page lands: if the sentinel is still on screen
-    // (a tall viewport, a short page), the fresh observer fires again at once.
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) onLoadMore();
-      },
-      { rootMargin: "600px 0px" },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [loading, onLoadMore]);
-
-  return (
-    <div ref={ref} style={{ display: "flex", justifyContent: "center", padding: "20px 0 8px" }}>
-      <button type="button" className="btn btn-secondary" onClick={() => onLoadMore()} disabled={loading} aria-busy={loading}>
-        {loading ? "Loading…" : "Load more"}
-      </button>
     </div>
   );
 }
