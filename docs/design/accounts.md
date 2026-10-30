@@ -20,10 +20,15 @@ instance, but the failure it creates is worse — an operator with no account an
 it, needing an env edit and a redeploy to get back in. Open-on-garbage is the recoverable
 mistake.
 
-One option covers both entry points. `signUpAction` calls `auth.api.signUpEmail` rather than
-reimplementing the insert, so `emailAndPassword.disableSignUp` in `src/lib/auth/auth.ts`
-rejects the Server Action and `/api/auth/sign-up/email` on the same check — there's no second
-guard to write, and so no way for the two to drift apart. Hiding the tab in `AuthForm` is
+One check covers every entry point. The Server Actions call `auth.api.signUpEmail` rather than
+reimplementing the insert, and the gate is `databaseHooks.user.create.before` in
+`src/lib/auth/auth.ts`, which every user creation passes through — so the Server Action and
+`/api/auth/sign-up/email` are rejected on the same check, with no second guard to drift apart.
+With signups closed it lets through only a sign-up carrying a pending registration invite's
+token for that exact address. The same check also runs earlier, as a `hooks.before` on
+`/sign-up/email`: Better Auth looks the address up before it creates anyone, and without that
+early refusal a closed sign-up would answer "user already exists" for an address with an
+account, telling anyone who asks who has one here. Hiding the tab in `AuthForm` is
 about honesty, not enforcement: a closed door shouldn't be something you discover by filling
 in a form and submitting it.
 
@@ -58,7 +63,7 @@ both, `sendResetPassword` isn't passed to `betterAuth()`, so Better Auth's endpo
 `RESET_PASSWORD_DISABLED`, and `/auth` shows no link. That's the `ALLOW_SIGNUPS` rule again:
 a feature that can't work shouldn't be something you find out about by filling in a form.
 On such an instance the way back into a locked account is the operator, as it always was.
-Like `disableSignUp`, it's decided once at startup.
+Like the registration gate, it's decided once at startup.
 
 **Why `BETTER_AUTH_URL`, when share and invite links use the request's own origin.**
 `requestOrigin()` reads `Host` and `X-Forwarded-Host`, and whoever sends a request chooses

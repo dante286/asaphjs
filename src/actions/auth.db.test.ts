@@ -1,8 +1,9 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, like } from "drizzle-orm";
-import { db } from "@/db/client";
-import { verification } from "@/db/schema";
-import { createTestUser, TEST_PASSWORD, type TestUser } from "@/test/db/fixtures";
+import { db, pool } from "@/db/client";
+import { INVITE_TTL_DAYS } from "@/db/queries/members";
+import { registrationInvites, verification } from "@/db/schema";
+import { createRegistrationInvite, createTestUser, TEST_PASSWORD, type TestUser } from "@/test/db/fixtures";
 import { signedInAs, signedOut } from "@/test/db/session";
 
 /**
@@ -25,9 +26,12 @@ import { signedInAs, signedOut } from "@/test/db/session";
  * outcomes the form distinguishes, and getting them backwards is a page that
  * goes blank instead of saying what was wrong.
  *
- * Registration being closed (`ALLOW_SIGNUPS=false`) is deliberately not
- * retested here — it is enforced in `betterAuth()` rather than in the action,
- * which is the property `src/lib/auth/auth.db.test.ts` already pins.
+ * Registration being closed (`ALLOW_SIGNUPS=false`) is tested here as well as
+ * in `src/lib/auth/auth.db.test.ts`, though the action doesn't enforce it. While
+ * the gate was `disableSignUp`, a library setting, pinning it once covered both
+ * entry points. #115 makes it a database hook that lets an invite token through,
+ * and the invite action reads the email from a row and passes the token on, so
+ * the action is now a path into app code that can be wrong on its own (#114).
  */
 /**
  * Password reset is wired into `betterAuth()` only when mail and
@@ -242,6 +246,174 @@ describe("signUpAction", () => {
     // APIError path rather than the action's own check.
     expect(result?.error).toBeTruthy();
     expect(await db.query.user.findMany()).toHaveLength(1);
+  });
+});
+
+/**
+ * A copy of these actions loaded with ALLOW_SIGNUPS=false, fresh for each test.
+ * `auth.ts` reads it once, at evaluation, so stubbing the variable isn't enough.
+ * The db client is pinned to the one already loaded: a fresh one would be a
+ * second pool, and the setup file, importing it after the reset, a third that
+ * nothing closes.
+ */
+function withSignupsClosed(): () => typeof actions {
+  let closed: typeof actions;
+
+  beforeEach(async () => {
+    const client = await import("@/db/client");
+    vi.doMock("@/db/client", () => client);
+    vi.stubEnv("ALLOW_SIGNUPS", "false");
+    vi.resetModules();
+    closed = await import("./auth");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.doUnmock("@/db/client");
+    vi.resetModules();
+  });
+
+  return () => closed;
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+describe("signUpAction with an invite token", () => {
+  function signUpForm(email: string, inviteToken?: string) {
+    return form({
+      email,
+      password: "a-long-enough-password",
+      confirmPassword: "a-long-enough-password",
+      displayName: "Whoever",
+      ...(inviteToken === undefined ? {} : { inviteToken }),
+    });
+  }
+
+  describe("while signups are closed", () => {
+    const closed = withSignupsClosed();
+
+    it.each<[string, () => Promise<string | undefined>]>([
+      ["no token", async () => undefined],
+      ["an unknown token", async () => "not-a-token-anyone-was-sent"],
+      // The general form never forwards a token: the way in is /join, where the
+      // address comes from the invite rather than from whoever is typing.
+      ["a valid invite's token", async () => (await createRegistrationInvite({ email: "uninvited@asaph.test" })).token],
+    ])("refuses %s, with the message for closed registration", async (_, arrange) => {
+      const token = await arrange();
+      const result = await closed().signUpAction(undefined, signUpForm("uninvited@asaph.test", token));
+
+      // EMAIL_PASSWORD_SIGN_UP_DISABLED's own message, passed through. A hook
+      // that returns `false` rather than throwing would keep the door shut but
+      // answer "Failed to create user", which this tells apart.
+      expect(result).toEqual({ error: "Email and password sign up is not enabled" });
+      expect(await db.query.user.findMany()).toEqual([expect.objectContaining({ id: owner.id })]);
+    });
+
+    it("says the same for an address that already has an account", async () => {
+      // Anything else ("User already exists") would make this form a way to
+      // find out who has an account here, and a Server Action never meets
+      // Better Auth's rate limiter.
+      const result = await closed().signUpAction(undefined, signUpForm(owner.email));
+
+      expect(result).toEqual({ error: "Email and password sign up is not enabled" });
+    });
+  });
+
+  it("ignores one while signups are open, and never writes it to the user row", async () => {
+    const token = "a-token-nobody-asked-for";
+
+    await expect(redirectFrom(actions.signUpAction(undefined, signUpForm("walk-in@asaph.test", token))))
+      .resolves.toBe("NEXT_REDIRECT;replace;/;307;");
+
+    const { rows } = await pool.query(`select * from "user" where email = 'walk-in@asaph.test'`);
+    expect(rows).toHaveLength(1);
+    expect(Object.values(rows[0])).not.toContain(token);
+  });
+});
+
+describe("signUpWithInviteAction", () => {
+  const closed = withSignupsClosed();
+  const INVITE_GONE = "This invitation has expired or was already used. Ask whoever invited you to send a new one.";
+  const EMAIL = "invited@asaph.test";
+
+  function joinForm(token: string, over: Record<string, string> = {}) {
+    return form({
+      token,
+      password: "a-long-enough-password",
+      confirmPassword: "a-long-enough-password",
+      displayName: "Invitee",
+      ...over,
+    });
+  }
+
+  function invite() {
+    return db.query.registrationInvites.findFirst({ where: eq(registrationInvites.email, EMAIL) });
+  }
+
+  async function accountsFor(email: string) {
+    return db.query.user.findMany({ where: (u, { eq }) => eq(u.email, email) });
+  }
+
+  it("registers the invited address, whatever email the form posts, and uses the invite", async () => {
+    const { token } = await createRegistrationInvite({ email: EMAIL, invitedBy: owner.id });
+
+    const digest = await redirectFrom(
+      closed().signUpWithInviteAction(undefined, joinForm(token, { email: "someone-else@asaph.test" })),
+    );
+
+    expect(digest).toBe("NEXT_REDIRECT;replace;/;307;");
+    expect(await accountsFor(EMAIL)).toEqual([expect.objectContaining({ name: "Invitee" })]);
+    expect(await accountsFor("someone-else@asaph.test")).toEqual([]);
+    expect((await invite())?.usedAt).toBeInstanceOf(Date);
+  });
+
+  it.each<[string, () => Promise<string>]>([
+    ["no token", async () => ""],
+    ["an unknown token", async () => "not-a-token-anyone-was-sent"],
+    [
+      "an expired token",
+      async () =>
+        (await createRegistrationInvite({ email: EMAIL, sentAt: new Date(Date.now() - INVITE_TTL_DAYS * DAY - 60_000) }))
+          .token,
+    ],
+    ["a used token", async () => (await createRegistrationInvite({ email: EMAIL, usedAt: new Date() })).token],
+  ])("says so, rather than throwing, for %s", async (_, arrange) => {
+    const token = await arrange();
+
+    expect(await closed().signUpWithInviteAction(undefined, joinForm(token))).toEqual({ error: INVITE_GONE });
+    expect(await db.query.user.findMany()).toEqual([expect.objectContaining({ id: owner.id })]);
+  });
+
+  it("says so for an invite revoked after the page loaded", async () => {
+    const { token } = await createRegistrationInvite({ email: EMAIL });
+    // The page showed the form; then the inviter withdrew it.
+    await db.update(registrationInvites).set({ token: null }).where(eq(registrationInvites.email, EMAIL));
+
+    expect(await closed().signUpWithInviteAction(undefined, joinForm(token))).toEqual({ error: INVITE_GONE });
+    expect(await accountsFor(EMAIL)).toEqual([]);
+  });
+
+  it("says so for a second submit, and makes one account", async () => {
+    const { token } = await createRegistrationInvite({ email: EMAIL });
+    await closed().signUpWithInviteAction(undefined, joinForm(token)).catch(() => {});
+
+    expect(await closed().signUpWithInviteAction(undefined, joinForm(token))).toEqual({ error: INVITE_GONE });
+    expect(await accountsFor(EMAIL)).toHaveLength(1);
+  });
+
+  it("doesn't use the invite when the sign-up fails", async () => {
+    const { token } = await createRegistrationInvite({ email: EMAIL });
+
+    const result = await closed().signUpWithInviteAction(
+      undefined,
+      joinForm(token, { password: "short", confirmPassword: "short" }),
+    );
+
+    expect(result).toMatchObject({ error: expect.stringMatching(/short/i) });
+    expect((await invite())?.usedAt).toBeNull();
+    await expect(redirectFrom(closed().signUpWithInviteAction(undefined, joinForm(token)))).resolves.toBe(
+      "NEXT_REDIRECT;replace;/;307;",
+    );
   });
 });
 

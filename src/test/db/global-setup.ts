@@ -61,7 +61,7 @@ export async function setup(): Promise<void> {
   const templateUrl = urlFor(TEMPLATE_DB);
   const pool = new Pool({ connectionString: templateUrl });
   try {
-    // The six migration files, applied to an empty database. Nothing else
+    // The migration files, applied to an empty database. Nothing else
     // proves meta/_journal.json is consistent with them, which is why CI runs
     // this tier at all rather than only the specs.
     await migrate(drizzle(pool), { migrationsFolder: "drizzle/migrations" });

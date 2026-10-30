@@ -62,7 +62,7 @@ export async function changePasswordAction(
  *
  * The upload sweep hangs off `user.deleteUser.beforeDelete` in
  * `src/lib/auth/auth.ts`, not this action, so `/api/auth/delete-user` sweeps too
- * — the same reasoning as `disableSignUp` covering both sign-up entry points.
+ * — the same reasoning as the registration gate living in a database hook.
  */
 export async function deleteAccountAction(
   _prev: ActionState,

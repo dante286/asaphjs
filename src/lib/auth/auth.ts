@@ -1,10 +1,43 @@
 import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/client";
 import { deleteUploadsForOwner } from "@/db/queries/collections";
+import { findInviteByToken, markInviteUsed } from "@/db/queries/registration-invites";
 import { passwordResetAvailable, RESET_TOKEN_TTL_SECONDS, sendResetPasswordEmail } from "./password-reset";
 import { signupsAllowed } from "./signups";
+
+/**
+ * Read once, at module evaluation, like the rest of this config: changing
+ * ALLOW_SIGNUPS needs a restart. `src/lib/auth/auth.db.test.ts` pins that.
+ */
+const signupsOpen = signupsAllowed();
+
+/** Today's answer to a closed sign-up, word for word, so the form and API clients see no change. */
+function signUpClosed(): APIError {
+  return new APIError("BAD_REQUEST", {
+    message: "Email and password sign up is not enabled",
+    code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+  });
+}
+
+/** The `inviteToken` a sign-up carried, if it carried a string one. */
+function inviteTokenFrom(ctx: { body?: unknown } | null): string | undefined {
+  const token = (ctx?.body as { inviteToken?: unknown } | undefined)?.inviteToken;
+  return typeof token === "string" && token ? token : undefined;
+}
+
+/**
+ * Whether a closed instance lets this sign-up through: `token` names a pending
+ * invite, and it's for exactly this address. The one check, run by both the
+ * early refusal in `hooks.before` and the gate in `databaseHooks`.
+ */
+async function inviteAdmits(token: string | undefined, email: unknown): Promise<boolean> {
+  if (!token || typeof email !== "string") return false;
+  const invite = await findInviteByToken(token);
+  return invite?.email === email.toLowerCase();
+}
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -14,15 +47,13 @@ export const auth = betterAuth({
     enabled: true,
     requireEmailVerification: false,
     minPasswordLength: 8,
-    // Closing registration here covers both entry points at once: `signUpAction`
-    // calls `auth.api.signUpEmail` rather than reimplementing the insert, so the
-    // Server Action and `/api/auth/sign-up/email` reject on the same check and
-    // can't drift apart. Rejects 400 EMAIL_PASSWORD_SIGN_UP_DISABLED.
-    disableSignUp: !signupsAllowed(),
+    // Always on: closing registration is `databaseHooks.user.create.before`
+    // below, which can let an invited address through where this flag couldn't.
+    disableSignUp: false,
     // Wired in only when it can work (mail configured, BETTER_AUTH_URL set —
     // see password-reset.ts for why the link can't come from the request).
     // Absent, `/request-password-reset` answers RESET_PASSWORD_DISABLED, and
-    // /auth doesn't offer the link. Read once, like `disableSignUp`.
+    // /auth doesn't offer the link. Read once, like `signupsOpen`.
     sendResetPassword: passwordResetAvailable() ? sendResetPasswordEmail : undefined,
     resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
     // A reset is often the answer to a compromised account, so it ends every
@@ -63,6 +94,62 @@ export const auth = betterAuth({
         await deleteUploadsForOwner(deleted.id);
       },
     },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        /**
+         * The registration gate. Every way of creating a user passes through
+         * here — the Server Actions, a direct POST to `/api/auth/sign-up/email`,
+         * and any sign-in method added later — which is why it lives here rather
+         * than in an action. With signups closed, only a pending invite for this
+         * exact address lets one through; anything else, including a call with
+         * no endpoint context at all, gets today's EMAIL_PASSWORD_SIGN_UP_DISABLED.
+         *
+         * It throws rather than returning `false`: `false` keeps the door shut
+         * too, but surfaces as FAILED_TO_CREATE_USER. The token reaches here
+         * through `ctx.body` and is never written to `user`, because
+         * `parseUserInput` keeps only declared fields.
+         */
+        before: async (user, ctx) => {
+          if (signupsOpen) return;
+
+          if (!(await inviteAdmits(inviteTokenFrom(ctx), user.email))) throw signUpClosed();
+        },
+        /**
+         * Better Auth queues this until the sign-up transaction commits, so a
+         * sign-up that fails never uses up the invite. Single use doesn't rest on
+         * this write: the invite is bound to one address and `user.email` is
+         * unique, so a second account from one token is impossible either way.
+         * It's what refuses a replay early, in `hooks.before`, and what takes the
+         * invite off the inviter's list.
+         */
+        after: async (user, ctx) => {
+          const token = inviteTokenFrom(ctx);
+          if (!signupsOpen && token) await markInviteUsed(token, user.email);
+        },
+      },
+    },
+  },
+  hooks: {
+    /**
+     * The same check, earlier, for email and password sign-up. The database
+     * hook alone runs too late: `signUpEmail` looks the address up before it
+     * creates anyone, and answers USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL for one
+     * that has an account. With signups closed that turned sign-up into a way to
+     * find out who has an account here, which `disableSignUp` never was, since
+     * it refused before the lookup. Refusing here, before the route runs, puts
+     * that back: everyone without a pending invite gets the same answer. A
+     * replayed token now meets this too, rather than the duplicate check.
+     *
+     * Not instead of the database hook, which still covers every other way of
+     * creating a user.
+     */
+    before: createAuthMiddleware(async (ctx) => {
+      if (signupsOpen || ctx.path !== "/sign-up/email") return;
+      const email = (ctx.body as { email?: unknown } | undefined)?.email;
+      if (!(await inviteAdmits(inviteTokenFrom(ctx), email))) throw signUpClosed();
+    }),
   },
   session: {
     expiresIn: 60 * 60 * 24 * 30, // 30 days
