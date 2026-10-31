@@ -24,9 +24,9 @@
     "email:test": "tsx scripts/email-test.ts"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.104.5",
+    "@tanstack/react-query": "^5.105.0",
     "@tanstack/react-table": "^9.3.1",
-    "better-auth": "^1.7.12",
+    "better-auth": "^1.7.14",
     "drizzle-orm": "^0.45.4",
     "nanoid": "^6.0.2",
     "next": "16.4.2",
