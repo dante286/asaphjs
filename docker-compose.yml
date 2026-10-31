@@ -68,7 +68,7 @@ services:
   #
   # Published on loopback only: everything it catches is an invite or reset link.
   mailpit:
-    image: axllent/mailpit:v1.31
+    image: axllent/mailpit:v1.32
     profiles: [mail]
     ports:
       - "127.0.0.1:1025:1025"
