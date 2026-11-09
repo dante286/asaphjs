@@ -50,8 +50,14 @@ export async function createTestUser(over: { email?: string; name?: string } = {
   // in a browser — signed, and validated by the same code on the way back in.
   // One call gives both the row and the credential; signing in again afterwards
   // would just be a second scrypt verify.
+  //
+  // Each fixture sign-up comes from its own documentation-range address, so the
+  // per-IP sign-up limit (`src/lib/auth/rate-limit.ts`) never counts a test's
+  // setup against it. A call with no headers at all would share one bucket, by
+  // design, and a test that made more than a handful of users would trip it.
   const response = await auth.api.signUpEmail({
     body: { email, password: TEST_PASSWORD, name },
+    headers: new Headers({ "x-forwarded-for": `198.18.${userCount >> 8}.${userCount & 255}` }),
     asResponse: true,
   });
   const { user } = (await response.json()) as { user: { id: string } };

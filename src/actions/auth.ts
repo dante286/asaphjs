@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
 import { findInviteByToken } from "@/db/queries/registration-invites";
 import { auth } from "@/lib/auth/auth";
+import { TOO_MANY_ATTEMPTS } from "@/lib/auth/rate-limit";
 import { safeNext } from "@/lib/auth/safe-next";
 
 export type AuthActionState = { error?: string } | undefined;
@@ -20,7 +21,7 @@ export async function signInAction(
   const next = safeNext(String(formData.get("next") ?? "/"));
 
   try {
-    await auth.api.signInEmail({ body: { email, password } });
+    await auth.api.signInEmail({ body: { email, password }, headers: await headers() });
   } catch (err) {
     if (err instanceof APIError) return { error: err.message };
     return { error: "Sign in failed. Please try again." };
@@ -43,7 +44,7 @@ export async function signUpAction(
   }
 
   try {
-    await auth.api.signUpEmail({ body: { email, password, name: displayName || email } });
+    await auth.api.signUpEmail({ body: { email, password, name: displayName || email }, headers: await headers() });
   } catch (err) {
     if (err instanceof APIError) return { error: err.message };
     return { error: "Sign up failed. Please try again." };
@@ -85,7 +86,7 @@ export async function signUpWithInviteAction(
   const body = { email: invite.email, password, name: displayName || invite.email, inviteToken: token };
 
   try {
-    await auth.api.signUpEmail({ body });
+    await auth.api.signUpEmail({ body, headers: await headers() });
   } catch (err) {
     // The same thing seen a moment later: the gate refusing a token that went
     // bad after the lookup above, or a double submit finding the account the
@@ -128,7 +129,7 @@ export async function requestPasswordResetAction(
   const email = String(formData.get("email") ?? "").trim();
 
   try {
-    await auth.api.requestPasswordReset({ body: { email } });
+    await auth.api.requestPasswordReset({ body: { email }, headers: await headers() });
   } catch (err) {
     // The two refusals that come before any lookup, so neither says anything
     // about the address.
@@ -137,6 +138,8 @@ export async function requestPasswordResetAction(
       return { error: "Password reset isn't available on this instance. Ask whoever runs it." };
     }
     if (code === "VALIDATION_ERROR") return { error: "Enter a valid email address." };
+    // Per client, never per address, so this says nothing about the address either.
+    if (code === TOO_MANY_ATTEMPTS) return { error: (err as Error).message };
     return { error: "Something went wrong. Please try again." };
   }
 
@@ -157,7 +160,7 @@ export async function resetPasswordAction(
   }
 
   try {
-    await auth.api.resetPassword({ body: { newPassword: password, token } });
+    await auth.api.resetPassword({ body: { newPassword: password, token }, headers: await headers() });
   } catch (err) {
     if (authErrorCode(err) === "INVALID_TOKEN") {
       return { error: "This link has expired or was already used. Ask for a new one from the sign-in page." };

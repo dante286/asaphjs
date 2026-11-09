@@ -177,6 +177,29 @@ general IP-based limiter for Server Actions. A reset signs out every session, bu
 five-minute session cookie cache (`session.cookieCache`) can still read as signed in until
 it lapses. The same is true of "Sign out everywhere".
 
+## Attempt limits on sign-in and password checks
+
+Better Auth ships a rate limiter, but it runs in its HTTP router's `onRequest`, and every
+form here calls `auth.api.*` from a Server Action, which never goes through that router. So
+the limits that matter live in `hooks.before` (`src/lib/auth/rate-limit.ts`), which every call
+goes through, HTTP or direct. Both entry points share the counters in `auth_rate_limits`.
+
+- **Counted before the endpoint runs, not after it fails.** Counting failures after the fact
+  lets a burst of concurrent guesses all read the same count. Every attempt is one atomic
+  upsert, and a successful sign-in clears its address's counter afterwards.
+- **Two keys for sign-in.** Per address, so rotating IPs doesn't help against one account,
+  and per client address, so one client can't spray a common password across many
+  accounts. Counting is the same whether or not the address has an account, so the limit
+  says nothing about who's registered.
+- **Client addresses come from Better Auth's own resolver** (`getIP`, with the same
+  `advanced.ipAddress` settings), so its limiter and ours agree. A forwarded chain it can't
+  read, or a call with no headers, goes into one shared bucket, `unresolved`, so forging a
+  header gets a client into the strictest limit instead of out of all of them. The actions
+  pass `headers()` through for this reason.
+
+Operator-facing limits and proxy settings are in
+[Self-hosting](../self-hosting.md#sign-in-attempt-limits).
+
 ## Deleting an account sweeps its uploads first
 
 The Security section of `/account` has a Delete account action. It asks for the password —

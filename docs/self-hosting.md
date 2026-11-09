@@ -89,6 +89,8 @@ carries the same list with comments.
 | `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` | unset | Video game lookups. Register an app at [dev.twitch.tv/console](https://dev.twitch.tv/console). |
 | `TMDB_API_KEY` | unset | Movie, TV and anime lookups. Either credential from [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) works. |
 | `METADATA_USER_AGENT` | `AsaphJS/0.1` | Identifies the instance to Open Library, per its API etiquette. Put a contact address in it. |
+| `TRUSTED_PROXIES` | unset | Comma-separated IPs or CIDR ranges of your reverse proxies. Lets sign-in limits find the real client address. See [Sign-in attempt limits](#sign-in-attempt-limits). |
+| `CLIENT_IP_HEADER` | unset | A single-value header your CDN puts the client address in, such as `cf-connecting-ip`. Used instead of `X-Forwarded-For`. |
 
 Without the provider keys, collections of those types simply show no metadata panel. Open
 Library needs no key, so book, comic, manga and strategy guide lookups always work. See
@@ -137,6 +139,41 @@ Set it and all three go away:
 It's per-deployment and runtime-only, so it costs the image none of its portability. The
 Compose file sets it to `http://localhost:3000`; change that to your public origin, or reset
 emails will send people to localhost.
+
+## Sign-in attempt limits
+
+Signing in, signing up, password reset and the password checks on the account page are
+limited, with counts kept in the database so a restart doesn't reset them:
+
+| What | Limit |
+| --- | --- |
+| Sign-in attempts for one email address, from anywhere | 10 per 15 minutes, cleared by a successful sign-in |
+| Sign-in attempts from one client address | 50 per 15 minutes |
+| Sign-ups from one client address | 10 per hour |
+| Password reset requests, and new-password submissions, from one client address | 10 per 15 minutes each |
+| Change password or delete account from one client address | 10 per 15 minutes |
+
+Past a limit, the form says *Too many attempts* and the attempt isn't checked at all. The
+per-address limit means someone can lock a person out of sign-in for 15 minutes by guessing
+wrong on purpose; that's the usual price of stopping password guessing, and the window is
+short.
+
+The per-client limits need the client's real address, which only your proxy knows:
+
+- **No proxy**, with the container published directly: nothing to set, but a client can then
+  claim any address in `X-Forwarded-For` and dodge the per-client limits. The per-address
+  limit still holds. A reverse proxy in front is the better setup.
+- **One reverse proxy** that *replaces* `X-Forwarded-For` (nginx:
+  `proxy_set_header X-Forwarded-For $remote_addr;`): nothing to set.
+- **A proxy that appends** to the header (nginx's `$proxy_add_x_forwarded_for`, Traefik)
+  or a chain of proxies: set `TRUSTED_PROXIES` to their addresses, for example the
+  Docker network's range (`172.16.0.0/12`).
+- **A CDN** (Cloudflare and the like): set `CLIENT_IP_HEADER` to the header it sends, such as
+  `cf-connecting-ip`.
+
+A request whose client address can't be worked out shares one limit with every other such
+request. That way, a forged header can't be used to get out of the limits. When it happens in
+production, the server logs a warning once.
 
 ## Closing registration
 
@@ -220,4 +257,5 @@ These run from a checkout pointed at the instance's database, not inside the con
 | Mail appears in the log instead of being sent | `SMTP_HOST` or `EMAIL_FROM` is unset. |
 | Every user signed out after a restart | `BETTER_AUTH_SECRET` changed between starts. |
 | `password authentication failed for user "postgres"` after setting `POSTGRES_PASSWORD` | The database volume was created with the old password. See [Running with Compose](#running-with-compose). |
+| Everyone sees *Too many attempts* on sign-in | The server can't work out client addresses, so all requests share one limit. The log says so at the first one. Set `TRUSTED_PROXIES` or `CLIENT_IP_HEADER`; see [Sign-in attempt limits](#sign-in-attempt-limits). |
 | Can't reach the Compose database from another machine | It's published on `127.0.0.1` only, by design. Use an SSH tunnel. |

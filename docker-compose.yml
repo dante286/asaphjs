@@ -21,6 +21,10 @@ services:
       # `false` closes registration. Compose reads this from `.env` (not
       # `.env.local`) or the shell; unset leaves signups open.
       ALLOW_SIGNUPS: ${ALLOW_SIGNUPS:-true}
+      # How sign-in attempt limits find the client's address behind a proxy or
+      # CDN. Unset is right when nothing sits in front of this container.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
       # Metadata lookups. Compose reads these from `.env` (not `.env.local`) or
       # the shell; leaving them unset is fine — collections whose provider has no
       # credentials just show no lookup panel. Open Library needs none.

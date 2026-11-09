@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/client";
@@ -7,6 +7,7 @@ import { deleteUploadsForOwner } from "@/db/queries/collections";
 import { findInviteByToken, markInviteUsed } from "@/db/queries/registration-invites";
 import { passwordResetAvailable, RESET_TOKEN_TTL_SECONDS, sendResetPasswordEmail } from "./password-reset";
 import { signupsAllowed } from "./signups";
+import { clientIp, ipAddressOptions, limitAuthAttempt, recordAuthSuccess } from "./rate-limit";
 
 /**
  * Read once, at module evaluation, like the rest of this config: changing
@@ -146,10 +147,33 @@ export const auth = betterAuth({
      * creating a user.
      */
     before: createAuthMiddleware(async (ctx) => {
+      // First, so a refused attempt costs no lookup and is counted either way.
+      // See `./rate-limit` for why the limits live here rather than in Better
+      // Auth's own limiter, which Server Action calls never reach.
+      await limitAuthAttempt({
+        path: ctx.path,
+        ip: clientIp(ctx.headers ?? ctx.request?.headers, ctx.context.options),
+        body: ctx.body,
+      });
+
       if (signupsOpen || ctx.path !== "/sign-up/email") return;
       const email = (ctx.body as { email?: unknown } | undefined)?.email;
       if (!(await inviteAdmits(inviteTokenFrom(ctx), email))) throw signUpClosed();
     }),
+    /**
+     * A sign-in that worked clears its address's attempt count. `returned` is
+     * the endpoint's result, or the APIError it threw, so anything that isn't
+     * an error here is a success.
+     */
+    after: createAuthMiddleware(async (ctx) => {
+      if (isAPIError(ctx.context.returned)) return;
+      await recordAuthSuccess({ path: ctx.path, body: ctx.body });
+    }),
+  },
+  advanced: {
+    // Shared by Better Auth's own HTTP limiter and the attempt limits above,
+    // so both agree on who a client is behind a proxy.
+    ipAddress: ipAddressOptions(),
   },
   session: {
     expiresIn: 60 * 60 * 24 * 30, // 30 days
