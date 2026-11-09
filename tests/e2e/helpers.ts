@@ -43,7 +43,7 @@ export async function signUp(page: Page): Promise<{ email: string; password: str
   await page.locator('input[name="confirmPassword"]').fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
 
-  // signUpAction redirects to "/", which the middleware only lets through once
+  // signUpAction redirects to "/", which the proxy only lets through once
   // the session cookie is set — so arriving here is the assertion that it is.
   await page.waitForURL("/");
   return { email, password: PASSWORD };

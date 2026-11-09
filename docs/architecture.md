@@ -32,7 +32,7 @@ under [Design notes](index.md#design-notes).
 | `src/lib/uploads/**` | The sharp pipeline, filename rules, URL derivation |
 | `src/lib/email/**` | `sendEmail` and the messages built on it |
 | `src/components/**` | React components, by area |
-| `middleware.ts` | Sends visitors with no session cookie on `/`, `/collections/**` and `/account/**` to `/auth`. A cookie-presence check only; authorization happens per request |
+| `proxy.ts` | Sends visitors with no session cookie on `/`, `/collections/**` and `/account/**` to `/auth` (a cookie-presence check only; authorization happens per request), and sets each page's Content-Security-Policy nonce and HSTS. The static security headers are in `next.config.ts`; both come from `src/lib/security-headers.ts` |
 | `scripts/**` | Seeding, `lookup:check`, `covers:backfill`, `email:test`, the e2e server |
 
 Rules live in `src/db/queries/`, not in the routes or actions that call them. Cover files are

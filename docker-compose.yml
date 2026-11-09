@@ -25,6 +25,8 @@ services:
       # CDN. Unset is right when nothing sits in front of this container.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      # `true` makes the CSP report-only, for a CDN that injects scripts.
+      CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-}
       # Metadata lookups. Compose reads these from `.env` (not `.env.local`) or
       # the shell; leaving them unset is fine — collections whose provider has no
       # credentials just show no lookup panel. Open Library needs none.
