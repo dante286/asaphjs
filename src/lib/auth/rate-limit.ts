@@ -28,6 +28,7 @@ export const AUTH_LIMITS = {
   signUpPerIp: { windowSeconds: 60 * 60, max: 10 },
   resetRequestPerIp: { windowSeconds: 15 * 60, max: 10 },
   resetPerIp: { windowSeconds: 15 * 60, max: 10 },
+  verificationRequestPerIp: { windowSeconds: 15 * 60, max: 10 },
   passwordCheckPerIp: { windowSeconds: 15 * 60, max: 10 },
 } as const;
 
@@ -64,6 +65,8 @@ function keysFor(path: string, ip: string, body: unknown): Array<{ key: string; 
       return [{ key: `reset-request:ip:${ip}`, limit: AUTH_LIMITS.resetRequestPerIp }];
     case "/reset-password":
       return [{ key: `reset:ip:${ip}`, limit: AUTH_LIMITS.resetPerIp }];
+    case "/send-verification-email":
+      return [{ key: `verify-request:ip:${ip}`, limit: AUTH_LIMITS.verificationRequestPerIp }];
     // Both take the current password, so a stolen session could otherwise be
     // used to guess it.
     case "/change-password":

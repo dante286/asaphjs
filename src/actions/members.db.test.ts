@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
 import { getCollectionById } from "@/db/queries/collections";
+import { user as userTable } from "@/db/schema";
 import { listMembers, resolveRole } from "@/db/queries/members";
 import { aCollection, createTestUser, type TestUser } from "@/test/db/fixtures";
 import { signedInAs, signedOut } from "@/test/db/session";
@@ -211,9 +214,11 @@ describe("inviteMemberAction: what it accepts", () => {
 describe("inviteMemberAction: email limits", () => {
   // `emailConfigured()` reads these per call; the limits apply only when mail
   // would actually go out.
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.stubEnv("SMTP_HOST", "smtp.asaph.test");
     vi.stubEnv("EMAIL_FROM", "Asaph <asaph@asaph.test>");
+    // With mail configured, inviting needs a confirmed address.
+    await markVerified(owner.id);
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -234,13 +239,13 @@ describe("inviteMemberAction: email limits", () => {
   it("caps how many invites one address receives, whoever sends them", async () => {
     // Different owners, different collections: the inbox is what's protected.
     for (let i = 0; i < INVITE_EMAIL_LIMITS.perRecipient.max; i++) {
-      const someone = await createTestUser();
+      const someone = await createTestUser({ verified: true });
       const theirs = await aCollection({ ownerId: someone.id });
       signedInAs(someone);
       expect((await actions.inviteMemberAction(theirs.id, "Target@asaph.test", "viewer")).ok).toBe(true);
     }
 
-    const another = await createTestUser();
+    const another = await createTestUser({ verified: true });
     const theirs = await aCollection({ ownerId: another.id });
     signedInAs(another);
     expect(await actions.inviteMemberAction(theirs.id, "target@asaph.test", "viewer")).toEqual({
@@ -267,6 +272,35 @@ describe("inviteMemberAction: email limits", () => {
   it("doesn't count when the instance sends no mail", async () => {
     vi.unstubAllEnvs();
     for (let i = 0; i < INVITE_EMAIL_LIMITS.perInviter.max + 5; i++) await invited(`guest-${i}@asaph.test`, "viewer");
+  });
+});
+
+async function markVerified(userId: string) {
+  await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, userId));
+}
+
+describe("inviteMemberAction: a confirmed address", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is needed to invite when the instance can send confirmation emails", async () => {
+    vi.stubEnv("SMTP_HOST", "smtp.asaph.test");
+    vi.stubEnv("EMAIL_FROM", "Asaph <asaph@asaph.test>");
+    vi.stubEnv("BETTER_AUTH_URL", "https://asaph.example.com");
+
+    expect(await actions.inviteMemberAction(collectionId, "guest@asaph.test", "viewer")).toEqual({
+      ok: false,
+      reason: "unverified",
+    });
+    expect(mail.send).not.toHaveBeenCalled();
+
+    // Read from the database, not the session, so it counts the moment it's set.
+    await markVerified(owner.id);
+    expect((await actions.inviteMemberAction(collectionId, "guest@asaph.test", "viewer")).ok).toBe(true);
+  });
+
+  it("isn't asked for where it couldn't be given", async () => {
+    // No mail: nobody can confirm anything, and nothing is emailed anyway.
+    expect((await actions.inviteMemberAction(collectionId, "guest@asaph.test", "viewer")).ok).toBe(true);
   });
 });
 

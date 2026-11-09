@@ -152,6 +152,7 @@ limited, with counts kept in the database so a restart doesn't reset them:
 | Sign-ups from one client address | 10 per hour |
 | Password reset requests, and new-password submissions, from one client address | 10 per 15 minutes each |
 | Change password or delete account from one client address | 10 per 15 minutes |
+| Confirmation emails | 1 a minute per account, and requests for one 10 per 15 minutes per client address |
 | Collection invite emails, when mail is configured | 20 a day per inviter, 5 a day per recipient address, 50 a day per client address |
 
 Past a limit, the form says *Too many attempts* and the attempt isn't checked at all. The
@@ -213,6 +214,18 @@ instance, someone you share a collection with needs a registration invite first.
 locked account is the operator. [Accounts and sign-in](design/accounts.md#password-reset-by-email)
 has the details, including the one-email-a-minute limit per address.
 
+## Confirming email addresses
+
+With mail and `BETTER_AUTH_URL` both set, a new account is emailed a confirmation link, and
+an account has to confirm its address before it can send invites, either to a collection
+or to register. Everything else works unconfirmed. Accounts created from an emailed
+registration invite start out confirmed, since opening that link already proved the address.
+
+**Existing accounts start unconfirmed.** After upgrading an instance that sends mail, people
+see a *Send confirmation email* button on their account page, and need it only when they
+next want to invite someone. Without mail, nothing is asked for: the instance couldn't
+deliver the link.
+
 ## Backups
 
 Two things hold an instance's data, and a backup needs both:
@@ -259,4 +272,5 @@ These run from a checkout pointed at the instance's database, not inside the con
 | Every user signed out after a restart | `BETTER_AUTH_SECRET` changed between starts. |
 | `password authentication failed for user "postgres"` after setting `POSTGRES_PASSWORD` | The database volume was created with the old password. See [Running with Compose](#running-with-compose). |
 | Everyone sees *Too many attempts* on sign-in | The server can't work out client addresses, so all requests share one limit. The log says so at the first one. Set `TRUSTED_PROXIES` or `CLIENT_IP_HEADER`; see [Sign-in attempt limits](#sign-in-attempt-limits). |
+| Invites refused with "Confirm your email address first" | Mail is configured, so the inviter's address has to be confirmed. The button is on their account page. See [Confirming email addresses](#confirming-email-addresses). |
 | Can't reach the Compose database from another machine | It's published on `127.0.0.1` only, by design. Use an SSH tunnel. |

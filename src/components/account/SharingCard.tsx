@@ -33,6 +33,8 @@ function inviteNotice(result: InviteResult, email: string): { text: string; warn
         return { text: `${email} isn't a valid email address.`, warn: true };
       case "rate_limited":
         return { text: "You've sent a lot of invites recently. Try again tomorrow.", warn: true };
+      case "unverified":
+        return { text: "Confirm your email address first. There's a button for it under Profile, above.", warn: true };
       case "already_member":
         // Re-inviting used to reset an accepted member and revoke their access;
         // now the query leaves them be, and this says why nothing happened.

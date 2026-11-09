@@ -32,6 +32,8 @@ function inviteNotice(result: InviteToRegisterActionResult, email: string, max: 
       return { text: "Enter a valid email address.", warn: true };
     case "unavailable":
       return { text: "Inviting isn't available on this instance right now.", warn: true };
+    case "unverified":
+      return { text: "Confirm your email address first. There's a button for it under Profile, above.", warn: true };
   }
 }
 

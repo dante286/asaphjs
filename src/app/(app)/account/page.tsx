@@ -9,6 +9,8 @@ import {
 } from "@/db/queries/registration-invites";
 import { registrationInvitesAvailable } from "@/lib/auth/registration-invites";
 import { ProfileForm } from "@/components/account/ProfileForm";
+import { EmailVerificationCard } from "@/components/account/EmailVerificationCard";
+import { emailVerificationAvailable, isEmailVerified } from "@/lib/auth/email-verification";
 import { SecurityPanel } from "@/components/account/SecurityPanel";
 import { CollectionSettingsCard } from "@/components/account/CollectionSettingsCard";
 import { SharingCard } from "@/components/account/SharingCard";
@@ -16,13 +18,31 @@ import { InviteSomeoneCard } from "@/components/account/InviteSomeoneCard";
 import { DataExportButtons } from "@/components/account/DataExportButtons";
 import { SignOutButton } from "@/components/account/SignOutButton";
 
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  // Set by Better Auth's redirect from a confirmation link: `verified` from our
+  // callback URL, plus `error` when the token was bad.
+  searchParams: Promise<{ verified?: string; error?: string }>;
+}) {
   const session = await requireSession();
+  const { verified: verifiedParam, error: linkError } = await searchParams;
   // additionalFields (timeZone/currency) aren't in the base Session type — re-read via getSession's raw shape.
   const full = (await getSession())?.user as typeof session.user & {
     timeZone?: string;
     currency?: string;
   };
+
+  // Only asked for where it can be given; see `emailVerificationAvailable`.
+  const verification = emailVerificationAvailable()
+    ? (await isEmailVerified(session.user.id))
+      ? verifiedParam && !linkError
+        ? ("just_verified" as const)
+        : null
+      : linkError
+        ? ("link_failed" as const)
+        : ("unverified" as const)
+    : null;
 
   const origin = await requestOrigin();
   const collectionRows = await listCollectionsForUser(session.user.id);
@@ -50,6 +70,8 @@ export default async function AccountPage() {
         timeZone={full?.timeZone ?? "UTC"}
         currency={full?.currency ?? "USD"}
       />
+
+      {verification && <EmailVerificationCard email={session.user.email} status={verification} />}
 
       <h6 style={{ marginBottom: 10 }}>Security</h6>
       {/* Counts are the owned ones only: collections shared *with* you survive

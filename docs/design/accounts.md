@@ -177,6 +177,36 @@ general IP-based limiter for Server Actions. A reset signs out every session, bu
 five-minute session cookie cache (`session.cookieCache`) can still read as signed in until
 it lapses. The same is true of "Sign out everywhere".
 
+## Confirming an email address
+
+Without confirmation, anyone could register an address they don't own and send invites
+under it, so "X shared a collection with you" would prove nothing about X. Confirmation
+closes that, and it gates **sending invites only** (collection and registration, via
+`mayInvite` in `src/lib/auth/email-verification.ts`), not signing in. Gating sign-in would
+have made every existing account click a link at its next visit. Invites are the one thing
+an unproven address can abuse.
+
+- **Wired in only where it can work**, like password reset: mail configured and
+  `BETTER_AUTH_URL` set (`emailVerificationAvailable`). Without both, there's no sender, no
+  card on the account page, and no gate. An instance that can't send mail can't ask anyone to
+  prove an address, and doesn't email invites anyway.
+- **The link is built from `BETTER_AUTH_URL`**, never from Better Auth's own `url` or the
+  request's host, for the reason in `link-origin.ts`. It goes to Better Auth's
+  `/api/auth/verify-email`, which checks the signed token and redirects to
+  `/account?verified=1`, or adds `error=` when the token is bad.
+- **Sent on sign-up**, and on demand from the account page's card. The sender allows one a
+  minute per account, and answers the same whether it sent or not, as the reset email does.
+  The request endpoint is in the attempt limits below.
+- **A registration invite counts as confirmation.** It's only ever emailed (no copy-link
+  fallback), so redeeming one proves the inbox, and the sign-up gate marks the new account
+  confirmed. A collection invite doesn't count: its link can be copied and sent anywhere.
+- **The gate reads the database, not the session.** The session's copy of the user is cached
+  for up to five minutes, and someone who has just clicked the link shouldn't be told they
+  haven't.
+
+This replaced a development stub that printed each tokenized verification link to the
+server log.
+
 ## Attempt limits on sign-in and password checks
 
 Better Auth ships a rate limiter, but it runs in its HTTP router's `onRequest`, and every

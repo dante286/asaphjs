@@ -7,6 +7,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { emailConfigured, inviteEmail, sendEmail } from "@/lib/email";
 import { inviteEmailAllowed } from "@/lib/invites/email-limits";
+import { mayInvite } from "@/lib/auth/email-verification";
 import { requestOrigin } from "@/lib/request-origin";
 import { resolveRole } from "@/db/queries/members";
 import {
@@ -43,7 +44,7 @@ function parseRole(role: unknown): "viewer" | "editor" {
 export type InviteEmailOutcome = "sent" | "not_configured" | "failed";
 
 export type InviteResult =
-  | { ok: false; reason: "already_member" | "invalid_email" | "rate_limited" }
+  | { ok: false; reason: "already_member" | "invalid_email" | "rate_limited" | "unverified" }
   | {
       ok: true;
       invitedEmail: string;
@@ -64,6 +65,10 @@ export async function inviteMemberAction(
 
   const address = String(email ?? "").trim().toLowerCase();
   if (!z.email().safeParse(address).success) return { ok: false, reason: "invalid_email" };
+
+  // An invite email goes out under this account's name; the account has to
+  // own the address it signed up with first.
+  if (!(await mayInvite(session.user.id))) return { ok: false, reason: "unverified" };
 
   // Before the invite is written, so a refused attempt leaves any earlier
   // invite and its link exactly as they were.

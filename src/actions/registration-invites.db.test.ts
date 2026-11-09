@@ -45,8 +45,9 @@ let me: TestUser;
 let someoneElse: TestUser;
 
 beforeEach(async () => {
-  me = await createTestUser();
-  someoneElse = await createTestUser();
+  // Verified: mail is configured for this file, so inviting needs it.
+  me = await createTestUser({ verified: true });
+  someoneElse = await createTestUser({ verified: true });
   signedInAs(me);
   forged.host = null;
   mail.send.mockReset().mockResolvedValue("sent");
@@ -119,6 +120,13 @@ describe("inviteToRegisterAction", () => {
 
   it("refuses something that isn't an email address", async () => {
     expect(await inviteToRegisterAction("not-an-address")).toEqual({ ok: false, reason: "invalid_email" });
+    expect(mail.send).not.toHaveBeenCalled();
+  });
+
+  it("needs the inviter's own address confirmed first", async () => {
+    signedInAs(await createTestUser());
+
+    expect(await inviteToRegisterAction("guest@asaph.test")).toEqual({ ok: false, reason: "unverified" });
     expect(mail.send).not.toHaveBeenCalled();
   });
 

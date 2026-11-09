@@ -5,3 +5,4 @@ export { sendEmail, type EmailMessage, type SendOutcome } from "./send";
 export { inviteEmail } from "./invite";
 export { passwordResetEmail } from "./password-reset";
 export { registrationInviteEmail } from "./registration-invite";
+export { verificationEmail } from "./verification";

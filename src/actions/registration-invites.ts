@@ -9,6 +9,7 @@ import {
   revokeRegistrationInvite,
 } from "@/db/queries/registration-invites";
 import { trustedLinkOrigin } from "@/lib/auth/link-origin";
+import { mayInvite } from "@/lib/auth/email-verification";
 import { registrationInvitesAvailable } from "@/lib/auth/registration-invites";
 import { requireSession } from "@/lib/auth/session";
 import { registrationInviteEmail, sendEmail } from "@/lib/email";
@@ -24,7 +25,7 @@ export type PendingRegistrationInvite = {
 
 export type InviteToRegisterActionResult =
   | { ok: true; invite: PendingRegistrationInvite }
-  | { ok: false; reason: "unavailable" | "invalid_email" | "has_account" | "already_invited" | "cap" }
+  | { ok: false; reason: "unavailable" | "invalid_email" | "unverified" | "has_account" | "already_invited" | "cap" }
   | { ok: false; reason: "cooldown"; secondsLeft: number };
 
 /**
@@ -42,6 +43,8 @@ export async function inviteToRegisterAction(email: string): Promise<InviteToReg
 
   const address = normalizeInviteEmail(email);
   if (!z.email().safeParse(address).success) return { ok: false, reason: "invalid_email" };
+  // Same rule as collection invites: the inviter's own address is proven first.
+  if (!(await mayInvite(session.user.id))) return { ok: false, reason: "unverified" };
 
   const result = await inviteToRegister({ email: address, invitedBy: session.user.id });
   if (!result.ok) return result;

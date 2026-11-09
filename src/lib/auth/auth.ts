@@ -7,6 +7,11 @@ import { deleteUploadsForOwner } from "@/db/queries/collections";
 import { findInviteByToken, markInviteUsed } from "@/db/queries/registration-invites";
 import { passwordResetAvailable, RESET_TOKEN_TTL_SECONDS, sendResetPasswordEmail } from "./password-reset";
 import { signupsAllowed } from "./signups";
+import {
+  emailVerificationAvailable,
+  sendVerificationEmail,
+  VERIFICATION_TOKEN_TTL_SECONDS,
+} from "./email-verification";
 import { clientIp, ipAddressOptions, limitAuthAttempt, recordAuthSuccess } from "./rate-limit";
 
 /**
@@ -116,6 +121,9 @@ export const auth = betterAuth({
           if (signupsOpen) return;
 
           if (!(await inviteAdmits(inviteTokenFrom(ctx), user.email))) throw signUpClosed();
+          // A registration invite is only ever emailed (no copy-link fallback),
+          // so redeeming one already proves this inbox: no need to verify again.
+          return { data: { ...user, emailVerified: true } };
         },
         /**
          * Better Auth queues this until the sign-up transaction commits, so a
@@ -183,11 +191,17 @@ export const auth = betterAuth({
       maxAge: 60 * 5,
     },
   },
-  emailVerification: {
-    sendVerificationEmail: async ({ user, url }) => {
-      console.log(`[dev email stub] verification link for ${user.email}: ${url}`);
-    },
-  },
+  // Wired in only when it can work, like `sendResetPassword`: mail configured
+  // and BETTER_AUTH_URL set. Verification doesn't gate signing in. It gates
+  // sending invites (`mayInvite`), the one thing an unproven address could
+  // abuse. Absent, `/send-verification-email` answers VERIFICATION_EMAIL_NOT_ENABLED.
+  emailVerification: emailVerificationAvailable()
+    ? {
+        sendVerificationEmail,
+        sendOnSignUp: true,
+        expiresIn: VERIFICATION_TOKEN_TTL_SECONDS,
+      }
+    : undefined,
   // Must be the last plugin — lets Server Actions set session cookies directly.
   plugins: [nextCookies()],
 });

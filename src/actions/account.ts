@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
 import { auth } from "@/lib/auth/auth";
+import { emailVerificationAvailable, VERIFIED_CALLBACK_PATH } from "@/lib/auth/email-verification";
+import { TOO_MANY_ATTEMPTS } from "@/lib/auth/rate-limit";
 import { requireSession } from "@/lib/auth/session";
 import { listCollectionsForUser } from "@/db/queries/collections";
 import { listItems } from "@/db/queries/items";
@@ -86,6 +88,30 @@ export async function deleteAccountAction(
   // from a Server Action), so this lands on the sign-in form rather than
   // bouncing through `requireSession`.
   redirect("/auth");
+}
+
+/**
+ * Emails the signed-in account a verification link. The answer is the same
+ * whether or not mail went out (the sender logs why it didn't), apart from a
+ * hit limit, which is about this client rather than the account.
+ */
+export async function sendVerificationEmailAction(): Promise<ActionState> {
+  const session = await requireSession();
+  if (!emailVerificationAvailable()) return { error: "This instance can't send email, so there's nothing to verify." };
+
+  try {
+    await auth.api.sendVerificationEmail({
+      body: { email: session.user.email, callbackURL: VERIFIED_CALLBACK_PATH },
+      headers: await headers(),
+    });
+  } catch (err) {
+    const code = (err as { body?: { code?: unknown } } | null)?.body?.code;
+    // Verified in another tab since the page loaded: the job is done.
+    if (code === "EMAIL_ALREADY_VERIFIED") return { ok: true };
+    if (code === TOO_MANY_ATTEMPTS) return { error: (err as Error).message };
+    return { error: "Couldn't send the email. Try again." };
+  }
+  return { ok: true };
 }
 
 export async function signOutEverywhereAction() {

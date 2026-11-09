@@ -195,6 +195,9 @@ describe("registration with an invite token", () => {
     const { user } = await signUp(auth, "Invited@Asaph.test", token);
 
     expect(user.email).toBe(EMAIL);
+    // The invite was emailed to this address, so redeeming it already proves
+    // the inbox: no separate confirmation is asked for.
+    expect(user.emailVerified).toBe(true);
     const { db } = await import("@/db/client");
     const invite = await db.query.registrationInvites.findFirst({ where: eq(registrationInvites.email, EMAIL) });
     expect(invite?.usedAt).toBeInstanceOf(Date);
