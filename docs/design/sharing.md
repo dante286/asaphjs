@@ -66,3 +66,20 @@ back with `acceptedAt` set. The action sends nothing and the card says they alre
 access. Role changes have their own control in the member list. The skip is part of the
 `INSERT … ON CONFLICT` rather than a read before the write, so an accept landing between
 the two can't slip past it.
+
+**Invite emails are limited, and the address is checked first.** An invite is mail sent
+from the instance's own account, to any address, with a subject built from names the
+inviter typed. On an instance with open signups, anyone can register and send them. So,
+when mail is configured, `inviteMemberAction` counts each attempt against three limits in
+`src/lib/invites/email-limits.ts`, using the same `auth_rate_limits` counters as sign-in:
+
+- 20 a day per inviter;
+- 5 a day per recipient address, whoever sends them, so throwaway accounts can't flood
+  one inbox;
+- 50 a day per client address.
+
+A refused invite returns `rate_limited` before the row is touched, so the link from an
+earlier invite keeps working. Without mail nothing is counted, since copying links by hand
+can't be abused. The address must parse as an email (`invalid_email` otherwise), and the
+role must be `viewer` or `editor`. Both are checked at runtime because a Server Action's
+arguments are whatever the POST says.

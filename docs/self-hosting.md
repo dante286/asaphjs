@@ -152,6 +152,7 @@ limited, with counts kept in the database so a restart doesn't reset them:
 | Sign-ups from one client address | 10 per hour |
 | Password reset requests, and new-password submissions, from one client address | 10 per 15 minutes each |
 | Change password or delete account from one client address | 10 per 15 minutes |
+| Collection invite emails, when mail is configured | 20 a day per inviter, 5 a day per recipient address, 50 a day per client address |
 
 Past a limit, the form says *Too many attempts* and the attempt isn't checked at all. The
 per-address limit means someone can lock a person out of sign-in for 15 minutes by guessing
