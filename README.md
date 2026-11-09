@@ -58,7 +58,7 @@ volume for item photos:
 
 ```bash
 docker run -d --name asaph -p 3000:3000 \
-  -e DATABASE_URL=postgresql://postgres:mysecretpassword@host.docker.internal:5432/asaph \
+  -e DATABASE_URL=postgresql://postgres:<db-password>@host.docker.internal:5432/asaph \
   -e BETTER_AUTH_SECRET=<a fixed secret> \
   -e BETTER_AUTH_URL=http://localhost:3000 \
   -v asaph-uploads:/app/uploads \

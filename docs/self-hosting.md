@@ -27,7 +27,7 @@ before the first start, and again after an upgrade whose release notes mention a
 
 ```bash
 docker run -d --name asaph -p 3000:3000 \
-  -e DATABASE_URL=postgresql://postgres:mysecretpassword@host.docker.internal:5432/asaph \
+  -e DATABASE_URL=postgresql://postgres:<db-password>@host.docker.internal:5432/asaph \
   -e BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
   -e BETTER_AUTH_URL=http://localhost:3000 \
   -v asaph-uploads:/app/uploads \
@@ -47,6 +47,31 @@ instance's configuration and pass the same value on every start.
 image. Without a volume they live in the container's writable layer and vanish with it — and
 `docker run --rm` on an upgrade would take every cover photo with it. `UPLOADS_DIR` already
 points there in the image; override it only if you mount somewhere else.
+
+## Running with Compose
+
+`docker-compose.yml` runs the app and its Postgres together. It's what local development
+uses, and it works for a small instance too, with two things to know first.
+
+**Set `POSTGRES_PASSWORD` in `.env` before the first `docker compose up`.** Unset, the
+database uses the development default that's written in this repository. Compose builds the
+app's `DATABASE_URL` from the same variable, so set it once. Use URL-safe characters
+(`openssl rand -hex 32`), since it ends up inside a connection string.
+
+Postgres only reads that password when its volume is first created. To change it on an
+existing volume, change it inside the database too, then update `.env` and recreate the app:
+
+```bash
+docker compose exec db psql -U postgres -c "ALTER USER postgres PASSWORD '<new-password>'"
+docker compose up -d app
+```
+
+**The database is published on `127.0.0.1` only.** The app reaches it over the Compose
+network, and the loopback port is there for migrations, seeding and maintenance commands run
+on the same machine. To reach it from somewhere else, use an SSH tunnel
+(`ssh -L 5432:127.0.0.1:5432 <host>`) rather than publishing it more widely. Docker's own
+firewall rules take precedence over ufw and firewalld, so a port published on every
+interface is open to the internet whatever the host firewall says.
 
 ## Configuration
 
@@ -194,3 +219,5 @@ These run from a checkout pointed at the instance's database, not inside the con
 | No metadata panel on a collection | That template has no provider, or this instance has no key for it. Intentional. |
 | Mail appears in the log instead of being sent | `SMTP_HOST` or `EMAIL_FROM` is unset. |
 | Every user signed out after a restart | `BETTER_AUTH_SECRET` changed between starts. |
+| `password authentication failed for user "postgres"` after setting `POSTGRES_PASSWORD` | The database volume was created with the old password. See [Running with Compose](#running-with-compose). |
+| Can't reach the Compose database from another machine | It's published on `127.0.0.1` only, by design. Use an SSH tunnel. |
