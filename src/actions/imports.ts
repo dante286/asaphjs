@@ -80,5 +80,5 @@ export async function rollbackImportBatchAction(collectionId: string, batchId: s
   const session = await requireSession();
   const role = await resolveRole(collectionId, session.user.id);
   if (role !== "owner" && role !== "editor") throw new Error("Not authorized.");
-  await rollbackImportBatch(batchId);
+  await rollbackImportBatch(collectionId, batchId);
 }

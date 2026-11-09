@@ -54,7 +54,7 @@ export async function POST(
     );
   }
 
-  const result = await patchItem(itemId, { coverUrl: saved }, request.headers.get("if-match") ?? undefined);
+  const result = await patchItem(id, itemId, { coverUrl: saved }, request.headers.get("if-match") ?? undefined);
   if (!result.ok) {
     // The row moved out from under us — don't leave the bytes orphaned on disk.
     await deleteUpload(saved);
@@ -79,7 +79,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Item not found." }, { status: 404 });
   }
 
-  const result = await patchItem(itemId, { coverUrl: null }, request.headers.get("if-match") ?? undefined);
+  const result = await patchItem(id, itemId, { coverUrl: null }, request.headers.get("if-match") ?? undefined);
   if (!result.ok) return patchFailure(result);
 
   await deleteUpload(item.coverUrl);

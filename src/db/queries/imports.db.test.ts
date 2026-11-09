@@ -202,7 +202,7 @@ describe("commitImport", () => {
     expect((await listItems({ collectionId })).total).toBe(10_000);
 
     // And the batch is still one undo.
-    await rollbackImportBatch(result.batchId);
+    await rollbackImportBatch(collectionId, result.batchId);
     expect((await listItems({ collectionId })).total).toBe(0);
   });
 
@@ -221,7 +221,7 @@ describe("rollbackImportBatch", () => {
     const kept = await commit([{ Title: "Kept" }]);
     const undone = await commit([{ Title: "Undone" }, { Title: "Also undone" }]);
 
-    await rollbackImportBatch(undone.batchId);
+    await rollbackImportBatch(collectionId, undone.batchId);
 
     expect((await listItems({ collectionId })).rows.map((r) => r.title)).toEqual(["Kept"]);
     const batch = await db.query.importBatches.findFirst({
@@ -240,17 +240,28 @@ describe("rollbackImportBatch", () => {
     const result = await commit([{ Title: "Chrono Trigger" }]);
     const [item] = (await listItems({ collectionId })).rows;
     const coverUrl = await writeTestUpload("importcover000000000.webp");
-    await patchItem(item.id, { coverUrl });
+    await patchItem(collectionId, item.id, { coverUrl });
 
-    await rollbackImportBatch(result.batchId);
+    await rollbackImportBatch(collectionId, result.batchId);
 
     expect(existsSync(path.join(UPLOADS_DIR, "importcover000000000.webp"))).toBe(false);
   });
 
+  it("leaves a batch from another collection alone", async () => {
+    const result = await commit([{ Title: "Chrono Trigger" }]);
+    const elsewhere = await aCollection({ ownerId: (await createTestUser()).id, name: "Elsewhere" });
+
+    await rollbackImportBatch(elsewhere.id, result.batchId);
+
+    expect((await listItems({ collectionId })).total).toBe(1);
+    const batch = await db.query.importBatches.findFirst({ where: eq(importBatches.id, result.batchId) });
+    expect(batch?.status).toBe("committed");
+  });
+
   it("is a no-op for a batch that has nothing left", async () => {
     const result = await commit([{ Title: "Chrono Trigger" }]);
-    await rollbackImportBatch(result.batchId);
+    await rollbackImportBatch(collectionId, result.batchId);
 
-    await expect(rollbackImportBatch(result.batchId)).resolves.toBeUndefined();
+    await expect(rollbackImportBatch(collectionId, result.batchId)).resolves.toBeUndefined();
   });
 });

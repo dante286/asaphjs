@@ -1,6 +1,6 @@
 import type { FieldDef } from "@/lib/fields/field-def";
 import { getFieldValue, isFixedColumnField, isTitleField, type ItemLike } from "@/lib/fields/item-values";
-import type { ItemPatch } from "@/db/queries/items";
+import type { InternalItemPatch } from "@/db/queries/items";
 import type { HydratedFields } from "./types";
 
 /**
@@ -99,7 +99,7 @@ function coerceForField(field: FieldDef, canonical: keyof HydratedFields, raw: u
 }
 
 export type PrefillPlan = {
-  patch: ItemPatch;
+  patch: InternalItemPatch;
   /** Field labels the lookup filled in — what the UI reports back. */
   applied: string[];
   /** Field labels the provider had data for but that already had a value. */
@@ -117,7 +117,7 @@ export function buildPrefillPlan(
   hydrated: HydratedFields,
   { overwrite = false }: { overwrite?: boolean } = {},
 ): PrefillPlan {
-  const patch: ItemPatch = {};
+  const patch: InternalItemPatch = {};
   const values: Record<string, unknown> = {};
   const applied: string[] = [];
   const keptExisting: string[] = [];

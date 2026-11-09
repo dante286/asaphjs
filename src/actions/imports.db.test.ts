@@ -334,9 +334,7 @@ describe("rollbackImportBatchAction", () => {
   });
 
   it("checks the role against the collection it was given", async () => {
-    // The batch id isn't checked against the collection, so the guard is doing
-    // all the work here — a caller has to be able to write to the collection
-    // they name.
+    // A caller has to be able to write to the collection they name.
     const result = await importInto({
       collectionId,
       fields: FIELDS,
@@ -349,6 +347,23 @@ describe("rollbackImportBatchAction", () => {
     await expect(actions.rollbackImportBatchAction(collectionId, result.batchId)).rejects.toThrow(
       "Not authorized.",
     );
+    expect((await listItems({ collectionId })).total).toBe(2);
+  });
+  it("won't undo another collection's batch through one you own", async () => {
+    // The other half: naming a collection you may write to doesn't make every
+    // batch id reachable through it.
+    const result = await importInto({
+      collectionId,
+      fields: FIELDS,
+      mapping: MAPPING,
+      csv: csvOf(ROWS),
+    });
+    const stranger = await createTestUser();
+    const theirs = await aCollection({ ownerId: stranger.id, fields: FIELDS });
+    signedInAs(stranger);
+
+    await actions.rollbackImportBatchAction(theirs.id, result.batchId);
+
     expect((await listItems({ collectionId })).total).toBe(2);
   });
 });

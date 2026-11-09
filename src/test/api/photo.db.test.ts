@@ -82,7 +82,7 @@ describe("POST", () => {
   it("unlinks the photo it replaced", async () => {
     const previous = await writeTestUpload("previouscover0000000.webp");
     const { patchItem } = await import("@/db/queries/items");
-    await patchItem(itemId, { coverUrl: previous });
+    await patchItem(collectionId, itemId, { coverUrl: previous });
 
     await post(photoForm(png));
 
@@ -97,7 +97,7 @@ describe("POST", () => {
 
   it("leaves a provider cover alone when replacing it", async () => {
     const { patchItem } = await import("@/db/queries/items");
-    await patchItem(itemId, { coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co2i5f.jpg" });
+    await patchItem(collectionId, itemId, { coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co2i5f.jpg" });
 
     // Nothing to unlink, nothing to throw about — deleteUpload skips any URL
     // this app didn't mint.
@@ -169,7 +169,7 @@ describe("POST", () => {
 
     it("deletes them for a 404 too", async () => {
       const { deleteItem } = await import("@/db/queries/items");
-      await deleteItem(itemId);
+      await deleteItem(collectionId, itemId);
 
       const response = await POST(
         apiRequest(`/api/collections/${collectionId}/items/${itemId}/photo`, {
@@ -242,7 +242,7 @@ describe("DELETE", () => {
 
   it("leaves a provider cover's URL cleared but nothing unlinked", async () => {
     const { patchItem } = await import("@/db/queries/items");
-    await patchItem(itemId, { coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co2i5f.jpg" });
+    await patchItem(collectionId, itemId, { coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co2i5f.jpg" });
 
     expect((await del()).status).toBe(200);
     expect(await getItem(itemId)).toMatchObject({ coverUrl: null });

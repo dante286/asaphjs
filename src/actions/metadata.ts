@@ -63,6 +63,7 @@ async function applyHydrated(
   if (mirrored) plan.patch.coverUrl = mirrored;
 
   const result = await patchItem(
+    collectionId,
     itemId,
     {
       ...plan.patch,
@@ -130,7 +131,7 @@ export async function clearLookupMatchAction(input: {
 }): Promise<Item> {
   await loadEditableItem(input.collectionId, input.itemId);
 
-  const result = await patchItem(input.itemId, { externalRef: null }, input.ifMatchUpdatedAt);
+  const result = await patchItem(input.collectionId, input.itemId, { externalRef: null }, input.ifMatchUpdatedAt);
   if (!result.ok && result.reason === "conflict") throw new Error("This item changed elsewhere — reload and try again.");
   if (!result.ok) throw new Error("Item not found.");
 

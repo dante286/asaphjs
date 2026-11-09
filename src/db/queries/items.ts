@@ -25,7 +25,6 @@ export function stripItemsForPublic<T extends { borrower: unknown; notes: unknow
 
 export type ItemPatch = Partial<{
   title: string;
-  coverUrl: string | null;
   verified: boolean;
   borrower: string | null;
   lentOn: string | null;
@@ -34,11 +33,13 @@ export type ItemPatch = Partial<{
 }>;
 
 /**
- * externalRef is provenance the server writes when a metadata lookup is applied
- * — never something a client sends, which is why it's separate from the
- * wire-facing ItemPatch the items PATCH route accepts.
+ * Fields only the server writes, which is why they're separate from the
+ * wire-facing ItemPatch the items PATCH route accepts: `externalRef` is
+ * provenance a metadata lookup records, and `coverUrl` is minted by the photo
+ * route or a lookup — a client-chosen one could name someone else's upload.
  */
-export type InternalItemPatch = ItemPatch & Partial<{ externalRef: ExternalRef | null }>;
+export type InternalItemPatch = ItemPatch &
+  Partial<{ coverUrl: string | null; externalRef: ExternalRef | null }>;
 
 export type ListItemsParams = {
   collectionId: string;
@@ -114,16 +115,25 @@ export type PatchResult =
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "conflict"; current: typeof items.$inferSelect };
 
+/**
+ * The item is looked up *within* `collectionId`, never by id alone: callers
+ * authorize against a collection, so an item from any other collection must
+ * read as not found rather than be written through it. Required, not optional,
+ * so a new caller can't skip it.
+ */
 export async function patchItem(
+  collectionId: string,
   itemId: string,
   patch: InternalItemPatch,
   ifMatchUpdatedAt?: string,
 ): Promise<PatchResult> {
+  const inCollection = and(eq(items.id, itemId), eq(items.collectionId, collectionId));
+
   return db.transaction(async (tx) => {
     const [current] = await tx
       .select()
       .from(items)
-      .where(eq(items.id, itemId))
+      .where(inCollection)
       .for("update");
 
     if (!current) return { ok: false, reason: "not_found" };
@@ -158,7 +168,7 @@ export async function patchItem(
       // The database's clock, matching the column's `defaultNow()` on insert —
       // see the note on `touchedNow` in collections.ts for why not `new Date()`.
       .set({ ...fixed, values: valuesExpr, updatedAt: sql`now()` })
-      .where(eq(items.id, itemId))
+      .where(inCollection)
       .returning();
 
     return { ok: true, item: updated };
@@ -171,11 +181,14 @@ export async function patchItem(
  * unreachable from the app the moment its row is gone, and `uploads/` is a
  * mounted volume nobody sweeps. `deleteUploads` ignores provider URLs, so only
  * files this app wrote are touched.
+ *
+ * Scoped to `collectionId` for the same reason as `patchItem`: an item outside
+ * it is left alone, exactly as if it didn't exist.
  */
-export async function deleteItem(itemId: string) {
+export async function deleteItem(collectionId: string, itemId: string) {
   const removed = await db
     .delete(items)
-    .where(eq(items.id, itemId))
+    .where(and(eq(items.id, itemId), eq(items.collectionId, collectionId)))
     .returning({ coverUrl: items.coverUrl });
 
   await deleteUploads(removed.map((row) => row.coverUrl));

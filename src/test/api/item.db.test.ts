@@ -6,10 +6,11 @@ import { aCollection, createTestUser, type TestUser } from "@/test/db/fixtures";
 import { apiRequest, routeContext } from "@/test/db/http";
 
 /**
- * The per-field autosave endpoint. Two things here are the route's own rather
+ * The per-field autosave endpoint. Things here that are the route's own rather
  * than the query layer's: it turns a conflict into a 409 carrying the row that
- * won, and it deletes `externalRef` from the body so a client cannot claim an
- * item was matched from a provider it never was.
+ * won, it parses the body so a client can't set the server-owned fields
+ * (`externalRef`, `coverUrl`), and it only ever reaches items in the collection
+ * the caller's role was checked against.
  */
 
 let owner: TestUser;
@@ -105,6 +106,29 @@ describe("PATCH", () => {
     expect((await response.json()).values).toEqual({ console: "SFC", paid: 220 });
   });
 
+  it("ignores a client-supplied coverUrl", async () => {
+    // Covers are minted server-side. A client-chosen URL could name another
+    // item's upload, which this item's next photo change would then unlink.
+    const response = await patch({ title: "Chrono Trigger", coverUrl: "/api/uploads/someoneelses000000000.webp" });
+
+    expect(response.status).toBe(200);
+    expect(await getItem(itemId)).toMatchObject({ title: "Chrono Trigger", coverUrl: null });
+  });
+
+  it("answers 400 for a body that isn't a valid patch", async () => {
+    for (const body of [{ title: 42 }, { verified: "yes" }, { lentOn: "next tuesday" }, "not json", [1, 2]]) {
+      expect((await patch(body)).status).toBe(400);
+    }
+    expect(await getItem(itemId)).toMatchObject({ title: "Chrono Trigger" });
+  });
+
+  it("answers 413 for an oversized body", async () => {
+    const response = await patch({ notes: "x".repeat(300 * 1024) });
+
+    expect(response.status).toBe(413);
+    expect(await getItem(itemId)).toMatchObject({ notes: null });
+  });
+
   describe("If-Match", () => {
     it("applies the patch when the version matches", async () => {
       const item = await getItem(itemId);
@@ -182,6 +206,26 @@ describe("PATCH", () => {
     expect(response.status).toBe(403);
     expect(await getItem(theirItem.id)).toMatchObject({ title: "Theirs" });
   });
+
+  it("won't reach another collection's item through one you own", async () => {
+    // The other half of the check above: naming a collection you may write to
+    // doesn't make every item id writable through it.
+    const other = await createTestUser();
+    const theirCollection = await aCollection({ ownerId: other.id, name: "Theirs" });
+    const theirItem = await createItem({ collectionId: theirCollection.id, title: "Theirs" });
+
+    const response = await PATCH(
+      apiRequest(`/api/collections/${collectionId}/items/${theirItem.id}`, {
+        method: "PATCH",
+        body: { title: "Hijacked" },
+        cookie: owner.cookie,
+      }),
+      routeContext({ id: collectionId, itemId: theirItem.id }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await getItem(theirItem.id)).toMatchObject({ title: "Theirs" });
+  });
 });
 
 describe("DELETE", () => {
@@ -214,5 +258,23 @@ describe("DELETE", () => {
     // Idempotent: the second delete of a row the first removed is the state the
     // caller asked for, not an error to show them.
     expect((await del()).status).toBe(204);
+  });
+
+  it("won't delete another collection's item through one you own", async () => {
+    const other = await createTestUser();
+    const theirCollection = await aCollection({ ownerId: other.id, name: "Theirs" });
+    const theirItem = await createItem({ collectionId: theirCollection.id, title: "Theirs" });
+
+    const response = await DELETE(
+      apiRequest(`/api/collections/${collectionId}/items/${theirItem.id}`, {
+        method: "DELETE",
+        cookie: owner.cookie,
+      }),
+      routeContext({ id: collectionId, itemId: theirItem.id }),
+    );
+
+    // The same answer as an id that isn't there, so it reveals nothing.
+    expect(response.status).toBe(204);
+    expect(await getItem(theirItem.id)).toBeTruthy();
   });
 });

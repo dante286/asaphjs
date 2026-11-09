@@ -180,6 +180,7 @@ async function ensureCollection(ownerId: string, spec: CollectionSpec) {
     });
     if (demoItem.verified || demoItem.borrower) {
       await patchItem(
+        collection.id,
         item.id,
         { verified: Boolean(demoItem.verified), borrower: demoItem.borrower ?? null },
         item.updatedAt.toISOString(),
