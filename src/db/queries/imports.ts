@@ -4,7 +4,7 @@ import { importBatches, items } from "@/db/schema";
 import type { ImportRowError } from "@/db/schema/import-batches";
 import type { FieldDef } from "@/lib/fields/field-def";
 import { isTitleField } from "@/lib/fields/item-values";
-import { deleteUploads } from "@/lib/uploads/files";
+import { releaseUploads } from "./uploads";
 import type { ImportMappings } from "@/types";
 
 const TRUE_VALUES = new Set(["y", "yes", "true", "1"]);
@@ -133,5 +133,5 @@ export async function rollbackImportBatch(collectionId: string, batchId: string)
     .update(importBatches)
     .set({ status: "rolled_back" })
     .where(and(eq(importBatches.id, batchId), eq(importBatches.collectionId, collectionId)));
-  await deleteUploads(removed.map((row) => row.coverUrl));
+  await releaseUploads(removed.map((row) => row.coverUrl));
 }

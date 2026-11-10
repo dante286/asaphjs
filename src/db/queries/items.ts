@@ -2,7 +2,7 @@ import { and, asc, desc, eq, ilike, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { items } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
-import { deleteUploads } from "@/lib/uploads/files";
+import { releaseUploads } from "./uploads";
 import type { ExternalRef } from "@/types";
 
 /**
@@ -191,7 +191,7 @@ export async function deleteItem(collectionId: string, itemId: string) {
     .where(and(eq(items.id, itemId), eq(items.collectionId, collectionId)))
     .returning({ coverUrl: items.coverUrl });
 
-  await deleteUploads(removed.map((row) => row.coverUrl));
+  await releaseUploads(removed.map((row) => row.coverUrl));
 }
 
 export async function getItem(itemId: string) {

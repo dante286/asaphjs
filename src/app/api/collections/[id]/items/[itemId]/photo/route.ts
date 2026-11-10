@@ -3,6 +3,7 @@ import { isGuardResponse, requireRole } from "@/lib/auth/api-guard";
 import { getItem, patchItem, type PatchResult } from "@/db/queries/items";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/uploads/limits";
 import { deleteUpload } from "@/lib/uploads/files";
+import { releaseUploads } from "@/db/queries/uploads";
 import { saveUpload } from "@/lib/uploads/store";
 
 // Multipart framing adds a little on top of the file itself; the authoritative
@@ -61,8 +62,9 @@ export async function POST(
     return patchFailure(result);
   }
 
-  // No-op unless the previous cover was itself an upload (provider URLs are left alone).
-  await deleteUpload(item.coverUrl);
+  // No-op unless the previous cover was itself an upload (provider URLs are left
+  // alone), and kept if another item still shows it.
+  await releaseUploads([item.coverUrl]);
   return NextResponse.json(result.item);
 }
 
@@ -82,6 +84,6 @@ export async function DELETE(
   const result = await patchItem(id, itemId, { coverUrl: null }, request.headers.get("if-match") ?? undefined);
   if (!result.ok) return patchFailure(result);
 
-  await deleteUpload(item.coverUrl);
+  await releaseUploads([item.coverUrl]);
   return NextResponse.json(result.item);
 }

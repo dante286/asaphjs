@@ -95,6 +95,21 @@ describe("POST", () => {
     expect((await getItem(itemId))!.coverUrl).not.toBe(previous);
   });
 
+  it("keeps the photo it replaced when another item still shows it", async () => {
+    // Only reachable with rows written before covers were server-only: an
+    // editor could point their item at someone else's upload, and replacing
+    // their photo used to unlink a file the other item still showed.
+    const shared = await writeTestUpload("sharedcover000000000.webp");
+    const { createItem, patchItem } = await import("@/db/queries/items");
+    await patchItem(collectionId, itemId, { coverUrl: shared });
+    const elsewhere = await aCollection({ ownerId: (await createTestUser()).id, name: "Theirs" });
+    await createItem({ collectionId: elsewhere.id, title: "Theirs", coverUrl: shared });
+
+    await post(photoForm(png));
+
+    expect(await readdir(UPLOADS_DIR)).toEqual(expect.arrayContaining(["sharedcover000000000.webp"]));
+  });
+
   it("leaves a provider cover alone when replacing it", async () => {
     const { patchItem } = await import("@/db/queries/items");
     await patchItem(collectionId, itemId, { coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co2i5f.jpg" });

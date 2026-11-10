@@ -1,8 +1,8 @@
-import { and, desc, eq, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { collections, collectionMembers, items, user } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
-import { deleteUploads } from "@/lib/uploads/files";
+import { releaseUploads } from "./uploads";
 import type { CollectionFeatures, ImportMappings } from "@/types";
 
 export type CollectionCardRow = {
@@ -300,7 +300,7 @@ export async function deleteCollection(id: string) {
     .where(eq(items.collectionId, id));
 
   await db.delete(collections).where(eq(collections.id, id));
-  await deleteUploads(covers.map((row) => row.coverUrl));
+  await releaseUploads(covers.map((row) => row.coverUrl));
 }
 
 /**
@@ -329,5 +329,11 @@ export async function deleteUploadsForOwner(userId: string): Promise<number> {
     .innerJoin(collections, eq(collections.id, items.collectionId))
     .where(eq(collections.ownerId, userId));
 
-  return deleteUploads(covers.map((row) => row.coverUrl));
+  // The rows still exist (this runs before the cascade), so the reference
+  // check ignores the ones about to go: items in collections this user owns.
+  const owned = db.select({ id: collections.id }).from(collections).where(eq(collections.ownerId, userId));
+  return releaseUploads(
+    covers.map((row) => row.coverUrl),
+    inArray(items.collectionId, owned),
+  );
 }

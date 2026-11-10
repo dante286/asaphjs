@@ -9,6 +9,7 @@ import { resolveLookupConfig } from "@/lib/metadata/lookup-config";
 import { buildPrefillPlan } from "@/lib/metadata/prefill";
 import { mirrorCover } from "@/lib/metadata/cover-mirror";
 import { deleteUpload } from "@/lib/uploads/files";
+import { releaseUploads } from "@/db/queries/uploads";
 import { toClientItem, type Item } from "@/lib/api/items-client";
 
 export type LookupApplyResult = {
@@ -83,7 +84,7 @@ async function applyHydrated(
 
   // No-op unless the cover we replaced was itself stored locally — an uploaded
   // photo or an earlier mirror. Provider URLs are left alone.
-  if (mirrored) await deleteUpload(item.coverUrl);
+  if (mirrored) await releaseUploads([item.coverUrl]);
 
   return { item: toClientItem(result.item), applied: plan.applied, keptExisting: plan.keptExisting };
 }
