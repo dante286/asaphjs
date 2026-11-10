@@ -13,6 +13,9 @@ import { getFieldValue } from "@/lib/fields/item-values";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
+/** Where a successful password change lands; the account page reads the flag. Not exported: a "use server" module may export only async functions. */
+const PASSWORD_CHANGED_PATH = "/account?password=changed";
+
 export async function updateProfileAction(
   _prev: ActionState,
   formData: FormData,
@@ -34,6 +37,20 @@ export async function updateProfileAction(
   return { ok: true };
 }
 
+/**
+ * Signs out every other device. A password change is often the answer to a
+ * suspected compromise, and leaving the intruder's session alive would make it
+ * pointless; password reset does the same. This device isn't signed out: Better
+ * Auth replaces its session with a fresh one and the `nextCookies` plugin sets
+ * that cookie from here.
+ *
+ * Success redirects rather than returning `{ ok }`. Returning re-renders the page
+ * inside this same request, from the request's original headers, which still
+ * carry the session token that was just revoked: the page's own session check
+ * fails and bounces to /auth. A redirect is rendered as a fresh request with
+ * the new cookie (sign-in relies on the same thing), and the page shows the
+ * confirmation from `?password=changed`.
+ */
 export async function changePasswordAction(
   _prev: ActionState,
   formData: FormData,
@@ -45,13 +62,14 @@ export async function changePasswordAction(
   try {
     await auth.api.changePassword({
       headers: await headers(),
-      body: { currentPassword, newPassword, revokeOtherSessions: false },
+      body: { currentPassword, newPassword, revokeOtherSessions: true },
     });
   } catch (err) {
     if (err instanceof APIError) return { error: err.message };
     return { error: "Couldn't change your password." };
   }
-  return { ok: true };
+  // Outside the try: `redirect` works by throwing.
+  redirect(PASSWORD_CHANGED_PATH);
 }
 
 /**
@@ -114,9 +132,14 @@ export async function sendVerificationEmailAction(): Promise<ActionState> {
   return { ok: true };
 }
 
+/**
+ * Every session, this device's included, so it ends on the sign-in form rather
+ * than on a page that would fail at the next click.
+ */
 export async function signOutEverywhereAction() {
   await requireSession();
   await auth.api.revokeSessions({ headers: await headers() });
+  redirect("/auth");
 }
 
 function toCsvValue(v: unknown): string {

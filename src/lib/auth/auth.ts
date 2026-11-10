@@ -186,9 +186,13 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 30, // 30 days
     updateAge: 60 * 60 * 24, // rolling refresh once a day
+    // Off, so every session check reads the session table. With the cache on,
+    // a signed copy of the session in a cookie answered for up to its maxAge
+    // without asking the database, and a revoked session (sign out everywhere,
+    // a password change or reset) kept working on any device holding a fresh
+    // copy. The cost is one indexed lookup per request.
     cookieCache: {
-      enabled: true,
-      maxAge: 60 * 5,
+      enabled: false,
     },
   },
   // Wired in only when it can work, like `sendResetPassword`: mail configured

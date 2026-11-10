@@ -69,20 +69,49 @@ describe("updateProfileAction", () => {
   });
 });
 
-describe("changePasswordAction", () => {
-  it("changes the password and leaves the session alone", async () => {
-    const result = await actions.changePasswordAction(
-      undefined,
-      form({ currentPassword: TEST_PASSWORD, newPassword: "a-longer-new-password" }),
-    );
+/** A second device: its own sign-in, its own cookies, as a browser would hold them. */
+async function anotherDevice(email: string, password = TEST_PASSWORD): Promise<string> {
+  const { auth } = await import("@/lib/auth/auth");
+  const response = await auth.api.signInEmail({
+    body: { email, password },
+    headers: new Headers({ "x-forwarded-for": "203.0.113.9" }),
+    asResponse: true,
+  });
+  return response.headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(";")[0])
+    .join("; ");
+}
 
-    expect(result).toEqual({ ok: true });
-    // `revokeOtherSessions: false`, so the person who just changed it isn't
-    // signed out of the tab they did it in.
-    const { auth } = await import("@/lib/auth/auth");
+async function sessionFor(cookie: string) {
+  const { auth } = await import("@/lib/auth/auth");
+  return auth.api.getSession({ headers: new Headers({ cookie }) });
+}
+
+describe("changePasswordAction", () => {
+  it("changes the password and signs every other device out", async () => {
+    const laptop = await anotherDevice(owner.email);
+    expect(await sessionFor(laptop)).not.toBeNull();
+
+    // A redirect, not a returned `{ ok }`: re-rendering in place would read the
+    // request's revoked token and bounce this device to /auth.
     await expect(
-      auth.api.signInEmail({ body: { email: owner.email, password: "a-longer-new-password" } }),
-    ).resolves.toMatchObject({ user: { email: owner.email } });
+      actions.changePasswordAction(
+        undefined,
+        form({ currentPassword: TEST_PASSWORD, newPassword: "a-longer-new-password" }),
+      ),
+    ).rejects.toMatchObject({ digest: "NEXT_REDIRECT;replace;/account?password=changed;307;" });
+
+    // The other device is out at once, with every cookie it holds.
+    expect(await sessionFor(laptop)).toBeNull();
+    // This device's old session went too, replaced by exactly one fresh one,
+    // which `nextCookies` sets on the browser that made the change.
+    expect(await sessionFor(owner.cookie)).toBeNull();
+    const sessions = await db.query.session.findMany();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].userId).toBe(owner.id);
+
+    expect(await anotherDevice(owner.email, "a-longer-new-password")).toContain("session_token");
   });
 
   it("turns a wrong current password into a message rather than a throw", async () => {
@@ -107,26 +136,30 @@ describe("changePasswordAction", () => {
 });
 
 describe("signOutEverywhereAction", () => {
-  it("removes every session row for the account", async () => {
+  /** It ends on the sign-in form, since this device is signed out too. */
+  async function signOutEverywhere() {
+    await expect(actions.signOutEverywhereAction()).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/auth;307;",
+    });
+  }
+
+  it("removes every session row for the account and lands on the sign-in form", async () => {
     expect(await db.query.session.findMany()).not.toEqual([]);
 
-    await actions.signOutEverywhereAction();
+    await signOutEverywhere();
 
     expect(await db.query.session.findMany()).toEqual([]);
   });
 
-  it("signs out a device presenting the session token", async () => {
-    await actions.signOutEverywhereAction();
+  it("signs out every device at once, whatever cookies it holds", async () => {
+    const laptop = await anotherDevice(owner.email);
 
-    // The token cookie alone, which is what a device has once the five-minute
-    // `cookieCache` copy has expired. Presenting the cached `session_data`
-    // cookie inside that window still reads as signed in — that's the trade
-    // the cache is configured for in src/lib/auth/auth.ts, and the reason this
-    // asserts on the token rather than on the whole cookie header.
-    const token = owner.cookie.split("; ").find((c) => c.startsWith("better-auth.session_token="))!;
-    const { auth } = await import("@/lib/auth/auth");
+    await signOutEverywhere();
 
-    expect(await auth.api.getSession({ headers: new Headers({ cookie: token }) })).toBeNull();
+    // Whole cookie headers, not just the token: there's no cached copy of the
+    // session that could answer for a revoked one (see `session.cookieCache`).
+    expect(await sessionFor(laptop)).toBeNull();
+    expect(await sessionFor(owner.cookie)).toBeNull();
   });
 
   it("needs a session of its own", async () => {

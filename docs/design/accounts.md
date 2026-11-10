@@ -172,10 +172,29 @@ back, and a double-clicked button would send nothing. Deleting held-back rows ke
 window anchored to the last email that went out, so a loop of requests gets one email a
 minute through rather than locking the real owner out for as long as it runs.
 
-Not here: changing an email address, email verification, an admin-initiated reset, and a
-general IP-based limiter for Server Actions. A reset signs out every session, but a device's
-five-minute session cookie cache (`session.cookieCache`) can still read as signed in until
-it lapses. The same is true of "Sign out everywhere".
+Not here: changing an email address or an admin-initiated reset. A reset signs out every
+session, and so does "Sign out everywhere"; see below for why that now takes effect at once.
+
+## Revoking sessions takes effect at once
+
+Three things end sessions: a password reset (every session), a password change (every
+*other* session), and "Sign out everywhere" (every session, this device's included, ending
+on `/auth`). A password change is often the response to a suspected compromise, so it
+revokes the others rather than leaving an intruder signed in. Better Auth replaces the
+current device's session with a fresh one, and `nextCookies` sets that cookie from the
+action.
+
+**Session checks always read the session table** (`session.cookieCache` is off). With the
+cache on, a signed copy of the session in a cookie answered for up to five minutes without
+a lookup, so a revoked session kept working on any device holding a fresh copy. The cost is
+one indexed lookup per request.
+
+**A password change redirects instead of returning.** A Server Action that returns re-renders
+the page inside the same request, from the request's original headers, and those still carry
+the token that was just revoked. The page's session check then fails and bounces the person
+to `/auth`, even though their browser now holds a valid new cookie. A redirect is rendered
+as a fresh request with the new cookie, so `changePasswordAction` redirects to
+`/account?password=changed` and the Security panel shows the confirmation from that.
 
 ## Confirming an email address
 

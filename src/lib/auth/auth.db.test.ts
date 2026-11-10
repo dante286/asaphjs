@@ -327,3 +327,13 @@ describe("password reset", () => {
     expect(await resetCode(auth)).toBe("offered");
   });
 });
+
+describe("session checks", () => {
+  it("always ask the database, so a revoked session stops working at once", async () => {
+    // With `cookieCache` on, a signed copy of the session in a cookie answered
+    // for up to its maxAge without a lookup, so sign out everywhere, a password
+    // change or a reset left devices signed in for minutes afterwards.
+    const auth = await freshAuth();
+    expect(auth.options.session?.cookieCache?.enabled).toBe(false);
+  });
+});

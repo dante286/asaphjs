@@ -25,9 +25,8 @@ export function emailVerificationAvailable(): boolean {
 }
 
 /**
- * Read from the database rather than the session: the session's copy of the
- * user can be minutes stale (`cookieCache`), and someone who has just clicked
- * the link shouldn't be told they haven't.
+ * Read from the user row rather than the session's copy of the user, so it
+ * reflects a link clicked a moment ago whatever the session has cached.
  */
 export async function isEmailVerified(userId: string): Promise<boolean> {
   const row = await db.query.user.findFirst({ where: eq(user.id, userId), columns: { emailVerified: true } });

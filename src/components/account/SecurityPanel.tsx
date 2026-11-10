@@ -13,9 +13,12 @@ import {
 export function SecurityPanel({
   collectionCount,
   itemCount,
+  passwordChanged,
 }: {
   collectionCount: number;
   itemCount: number;
+  /** Arrived from a successful change (`?password=changed`): the action redirects rather than returning. */
+  passwordChanged: boolean;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     changePasswordAction,
@@ -45,7 +48,11 @@ export function SecurityPanel({
           <button className="btn btn-secondary" type="submit" disabled={pending}>
             {pending ? "Updating…" : "Change password"}
           </button>
-          {state?.ok && <span style={{ fontSize: 12, color: "var(--color-accent-700)" }}>Password updated.</span>}
+          {passwordChanged && !state?.error && (
+            <span role="status" style={{ fontSize: 12, color: "var(--color-accent-700)" }}>
+              Password updated. Every other device has been signed out.
+            </span>
+          )}
           {state?.error && <span style={{ fontSize: 12, color: "#b5544a" }}>{state.error}</span>}
         </div>
       </form>

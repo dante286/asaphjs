@@ -206,7 +206,8 @@ leaked address to replace it. Renaming a collection doesn't change its public li
 
 - **Profile:** display name, time zone and currency. Your email address can't be changed.
 - **Security:** change your password, see your active sessions, **Sign out everywhere**, and
-  delete your account.
+  delete your account. Changing your password signs out every other device straight away
+  and keeps you signed in on this one. **Sign out everywhere** signs out this device too.
 - **Export:** download your collections as CSV or JSON.
 - **Collections:** rename or delete each collection you own, and its sharing settings.
 - **Invite someone:** on an instance closed to registration that sends email, invite people

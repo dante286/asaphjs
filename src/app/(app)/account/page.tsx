@@ -23,10 +23,11 @@ export default async function AccountPage({
 }: {
   // Set by Better Auth's redirect from a confirmation link: `verified` from our
   // callback URL, plus `error` when the token was bad.
-  searchParams: Promise<{ verified?: string; error?: string }>;
+  // `password=changed` is where a successful password change lands.
+  searchParams: Promise<{ verified?: string; error?: string; password?: string }>;
 }) {
   const session = await requireSession();
-  const { verified: verifiedParam, error: linkError } = await searchParams;
+  const { verified: verifiedParam, error: linkError, password: passwordParam } = await searchParams;
   // additionalFields (timeZone/currency) aren't in the base Session type — re-read via getSession's raw shape.
   const full = (await getSession())?.user as typeof session.user & {
     timeZone?: string;
@@ -77,6 +78,7 @@ export default async function AccountPage({
       {/* Counts are the owned ones only: collections shared *with* you survive
           your account, so naming them in a delete confirmation would overstate it. */}
       <SecurityPanel
+        passwordChanged={passwordParam === "changed"}
         collectionCount={owned.length}
         itemCount={owned.reduce((sum, row) => sum + row.itemCount, 0)}
       />
