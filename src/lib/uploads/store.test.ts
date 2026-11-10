@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { MAX_DIMENSION, THUMB_DIMENSION, sniffImageExt } from "./store";
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { crc32 } from "node:zlib";
+import sharp from "sharp";
+import { describe, expect, it, vi } from "vitest";
+import { MAX_DIMENSION, MAX_INPUT_PIXELS, THUMB_DIMENSION, saveUpload, sniffImageExt } from "./store";
 
 /** Bytes with the given prefix, padded to at least the 12-byte minimum. */
 function header(...parts: (number[] | string)[]): Uint8Array {
@@ -80,5 +85,38 @@ describe("resize bounds", () => {
     // Both are derived from real frame widths in the UI; if these ever crossed,
     // the thumb would be an upscale of the bounded copy.
     expect(THUMB_DIMENSION).toBeLessThan(MAX_DIMENSION);
+  });
+});
+
+/** A real PNG whose header claims `width` x `height`: sharp's pixel limit reads only the header. */
+async function pngClaiming(width: number, height: number): Promise<Uint8Array> {
+  const png = Buffer.from(await sharp({ create: { width: 8, height: 8, channels: 3, background: "#888" } }).png().toBuffer());
+  // IHDR's data starts at byte 16: width and height, big-endian, then the
+  // chunk's CRC over type + data at byte 29.
+  png.writeUInt32BE(width, 16);
+  png.writeUInt32BE(height, 20);
+  png.writeUInt32BE(crc32(png.subarray(12, 29)), 29);
+  return new Uint8Array(png);
+}
+
+describe("decompression bombs", () => {
+  it("refuses an image that declares more pixels than the limit, before decoding it", async () => {
+    // 20000 x 20000 = 400 MP: past the limit, and past sharp's own default too.
+    expect(20000 * 20000).toBeGreaterThan(MAX_INPUT_PIXELS);
+    expect(await saveUpload(await pngClaiming(20000, 20000))).toBeNull();
+  });
+
+  it("applies the limit to a real, decodable image", async () => {
+    // A valid 200 x 200 PNG (40,000 px) either side of a small limit, so the
+    // limit is the only thing that differs. The success writes into a scratch
+    // uploads directory.
+    vi.stubEnv("UPLOADS_DIR", await mkdtemp(path.join(os.tmpdir(), "asaph-uploads-")));
+    const png = new Uint8Array(
+      await sharp({ create: { width: 200, height: 200, channels: 3, background: "#888" } }).png().toBuffer(),
+    );
+
+    expect(await saveUpload(png, { maxInputPixels: 39_999 })).toBeNull();
+    expect(await saveUpload(png, { maxInputPixels: 40_000 })).toMatch(/^\/api\/uploads\/.+\.webp$/);
+    vi.unstubAllEnvs();
   });
 });
