@@ -205,6 +205,17 @@ describe("updateCollectionSettingsAction", () => {
     expect((await getCollectionById(collectionId))?.ownerId).toBe(owner.id);
   });
 
+  it("won't take a share token or link switch from the client", async () => {
+    // Those have their own actions, which mint the token server-side; a token
+    // a client chose could be short or guessable.
+    await actions.updateCollectionSettingsAction(collectionId, {
+      shareEnabled: true,
+      shareToken: "a",
+    } as unknown as { name: string });
+
+    expect(await getCollectionById(collectionId)).toMatchObject({ shareEnabled: false, shareToken: null });
+  });
+
   it("takes the settings a form does send", async () => {
     const result = await actions.updateCollectionSettingsAction(collectionId, {
       defaultView: "table",

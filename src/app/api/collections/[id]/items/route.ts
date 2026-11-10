@@ -3,6 +3,8 @@ import { z } from "zod";
 import { isGuardResponse, requireRole } from "@/lib/auth/api-guard";
 import { createItem, listItems, stripItemsForPublic } from "@/db/queries/items";
 import { getCollectionById } from "@/db/queries/collections";
+import { readJsonBody } from "@/lib/api/json-body";
+import { ITEM_BODY_MAX_BYTES, itemBorrower, itemNotes, itemTitle, itemValues } from "@/lib/api/item-input";
 import { getProvider } from "@/lib/metadata/providers";
 import { resolveLookupConfig } from "@/lib/metadata/lookup-config";
 import { mirrorCover } from "@/lib/metadata/cover-mirror";
@@ -15,12 +17,12 @@ import type { ExternalRef } from "@/types";
  * forged body can't point an item's cover at an arbitrary URL.
  */
 const newItemSchema = z.object({
-  title: z.string().trim().min(1),
-  values: z.record(z.string(), z.unknown()).optional(),
+  title: itemTitle.trim().min(1),
+  values: itemValues.optional(),
   verified: z.boolean().optional(),
-  borrower: z.string().nullable().optional(),
-  notes: z.string().nullable().optional(),
-  match: z.object({ sourceId: z.string().min(1) }).optional(),
+  borrower: itemBorrower.optional(),
+  notes: itemNotes.optional(),
+  match: z.object({ sourceId: z.string().min(1).max(200) }).optional(),
 });
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -58,7 +60,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const guard = await requireRole(request, id, ["owner", "editor"]);
   if (isGuardResponse(guard)) return guard;
 
-  const parsed = newItemSchema.safeParse(await request.json().catch(() => null));
+  const body = await readJsonBody(request, ITEM_BODY_MAX_BYTES);
+  if (!body.ok) return body.response;
+  const parsed = newItemSchema.safeParse(body.value);
   if (!parsed.success) {
     const onTitle = parsed.error.issues.some((issue) => issue.path[0] === "title");
     return NextResponse.json(

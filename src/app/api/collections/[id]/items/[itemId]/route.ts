@@ -2,12 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isGuardResponse, requireRole } from "@/lib/auth/api-guard";
 import { deleteItem, patchItem } from "@/db/queries/items";
-
-/**
- * Bigger than any per-field autosave or a long notes field, small enough that
- * nobody can make the server buffer and parse an arbitrarily large body.
- */
-const MAX_PATCH_BYTES = 256 * 1024;
+import { readJsonBody } from "@/lib/api/json-body";
+import { ITEM_BODY_MAX_BYTES, itemBorrower, itemNotes, itemTitle, itemValues } from "@/lib/api/item-input";
 
 /**
  * What a client may change on an item. Parsed, not just typed: this is a public
@@ -24,12 +20,12 @@ const MAX_PATCH_BYTES = 256 * 1024;
  * sends them gets the rest of its patch applied rather than a 400.
  */
 const itemPatchSchema = z.object({
-  title: z.string().max(1000).optional(),
+  title: itemTitle.optional(),
   verified: z.boolean().optional(),
-  borrower: z.string().max(1000).nullable().optional(),
+  borrower: itemBorrower.optional(),
   lentOn: z.iso.date().nullable().optional(),
-  notes: z.string().max(50_000).nullable().optional(),
-  values: z.record(z.string().min(1).max(200), z.unknown()).optional(),
+  notes: itemNotes.optional(),
+  values: itemValues.optional(),
 });
 
 export async function PATCH(
@@ -40,21 +36,9 @@ export async function PATCH(
   const guard = await requireRole(request, id, ["owner", "editor"]);
   if (isGuardResponse(guard)) return guard;
 
-  if (Number(request.headers.get("content-length") ?? 0) > MAX_PATCH_BYTES) {
-    return NextResponse.json({ error: "That change is too large to save." }, { status: 413 });
-  }
-  const raw = await request.text();
-  if (raw.length > MAX_PATCH_BYTES) {
-    return NextResponse.json({ error: "That change is too large to save." }, { status: 413 });
-  }
-
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    json = null;
-  }
-  const parsed = itemPatchSchema.safeParse(json);
+  const body = await readJsonBody(request, ITEM_BODY_MAX_BYTES);
+  if (!body.ok) return body.response;
+  const parsed = itemPatchSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json({ error: "That change couldn't be saved as sent." }, { status: 400 });
   }

@@ -147,6 +147,16 @@ describe("GET", () => {
 });
 
 describe("POST", () => {
+  it("refuses an oversized body before parsing it", async () => {
+    const response = await post({ title: "Big", notes: "x".repeat(300 * 1024) });
+    expect(response.status).toBe(413);
+  });
+
+  it("refuses values past the shared field limits", async () => {
+    expect((await post({ title: "x".repeat(1001) })).status).toBe(400);
+    expect((await post({ title: "Fine", values: { ["k".repeat(201)]: 1 } })).status).toBe(400);
+  });
+
   it("creates the whole item the dialog collected", async () => {
     const response = await post({
       title: "  Chrono Trigger  ",

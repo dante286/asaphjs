@@ -128,6 +128,26 @@ describe("importCsvIntoNewCollectionAction", () => {
     ).rejects.toThrow();
   });
 
+  it("parses the name, view and features like creating a collection does", async () => {
+    for (const bad of [
+      { name: "   " },
+      { name: "x".repeat(121) },
+      { defaultView: "grid" },
+      { features: { lending: "yes" } },
+    ]) {
+      await expect(
+        actions.importCsvIntoNewCollectionAction({
+          name: "Video Games",
+          fields: FIELDS,
+          mapping: MAPPING,
+          csv: csvOf(ROWS),
+          ...(bad as object),
+        } as Parameters<typeof actions.importCsvIntoNewCollectionAction>[0]),
+      ).rejects.toThrow();
+    }
+    expect(await getCollectionForUser(owner.id, "video-games")).toBeNull();
+  });
+
   it("turns away a file over the cap before creating anything", async () => {
     // The picker checks the file first, but the action is a public endpoint;
     // the refusal comes back as a value so production builds keep the message.
