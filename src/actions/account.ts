@@ -9,6 +9,7 @@ import { TOO_MANY_ATTEMPTS } from "@/lib/auth/rate-limit";
 import { requireSession } from "@/lib/auth/session";
 import { listCollectionsForUser } from "@/db/queries/collections";
 import { listItems } from "@/db/queries/items";
+import { csvCell, csvSectionHeading } from "@/lib/csv/export";
 import { getFieldValue } from "@/lib/fields/item-values";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
@@ -142,11 +143,6 @@ export async function signOutEverywhereAction() {
   redirect("/auth");
 }
 
-function toCsvValue(v: unknown): string {
-  const s = v === null || v === undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
 export async function exportAllCsvAction() {
   const session = await requireSession();
   const collectionRows = await listCollectionsForUser(session.user.id);
@@ -155,10 +151,10 @@ export async function exportAllCsvAction() {
   for (const { collection } of collectionRows) {
     const { rows } = await listItems({ collectionId: collection.id, pageSize: 10000 });
     const fields = collection.fields;
-    parts.push(`# ${collection.name}`);
-    parts.push(fields.map((f) => toCsvValue(f.label)).join(","));
+    parts.push(csvSectionHeading(collection.name));
+    parts.push(fields.map((f) => csvCell(f.label)).join(","));
     for (const item of rows) {
-      const line = fields.map((field, index) => toCsvValue(getFieldValue(item, field, index)));
+      const line = fields.map((field, index) => csvCell(getFieldValue(item, field, index)));
       parts.push(line.join(","));
     }
     parts.push("");
