@@ -1,7 +1,7 @@
 /**
  * Where a successful sign-in is allowed to land.
  *
- * `middleware.ts` puts the path you were aiming for into `?next=`, `/auth`
+ * `proxy.ts` puts the path you were aiming for into `?next=`, `/auth`
  * hands it to the form as a hidden input, and `signInAction` redirects there.
  * Every step of that carries an attacker-supplied string: a link to
  * `/auth?next=https://elsewhere.example/login` is a link to *this* instance, so

@@ -13,7 +13,7 @@ import { JoinForm } from "@/components/auth/JoinForm";
  * shown read-only in the form comes from it. That's only for display: the
  * action looks it up again on submit, and the gate in `betterAuth()` once more.
  *
- * Outside the middleware's matcher, so it's reachable signed out.
+ * Not on the proxy's signed-in-only list, so it's reachable signed out.
  */
 export default async function JoinPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;

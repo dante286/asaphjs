@@ -21,6 +21,15 @@ export const THUMB_DIMENSION = 500;
 
 const WEBP_QUALITY = 82;
 
+/**
+ * The most pixels an upload may *declare*. The 10 MB byte cap doesn't bound
+ * this: a PNG of one flat colour compresses to almost nothing at any size, and
+ * libvips allocates for the declared dimensions, around a gigabyte at sharp's
+ * default limit of 268 MP. sharp checks this against the header, before
+ * decoding anything. 120 MP still admits the largest phone cameras (108 MP).
+ */
+export const MAX_INPUT_PIXELS = 120_000_000;
+
 function ascii(bytes: Uint8Array, start: number, length: number): string {
   return String.fromCharCode(...bytes.subarray(start, start + length));
 }
@@ -56,14 +65,17 @@ export function sniffImageExt(bytes: Uint8Array): string | null {
  * Only the full-size URL is stored; the thumb is found by name, so no schema
  * change and provider covers keep working unchanged.
  */
-export async function saveUpload(bytes: Uint8Array): Promise<string | null> {
+export async function saveUpload(
+  bytes: Uint8Array,
+  { maxInputPixels = MAX_INPUT_PIXELS }: { maxInputPixels?: number } = {},
+): Promise<string | null> {
   // Cheap structural reject so obvious non-images never reach the decoder.
   if (!sniffImageExt(bytes)) return null;
 
   let full: Buffer;
   let thumb: Buffer;
   try {
-    full = await sharp(bytes, { failOn: "error" })
+    full = await sharp(bytes, { failOn: "error", limitInputPixels: maxInputPixels })
       .rotate()
       .resize({
         width: MAX_DIMENSION,

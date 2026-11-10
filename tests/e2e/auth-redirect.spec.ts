@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * `middleware.ts` is the one file in this repo that nothing else can prove is
+ * `proxy.ts` is the one file in this repo that nothing else can prove is
  * wired into the production build. It isn't imported by a route, it doesn't
  * appear in a trace anyone reads, and a build that dropped it would be green
  * everywhere else while leaving every protected page open to anyone who typed
@@ -25,9 +25,9 @@ for (const pathname of PROTECTED) {
   });
 }
 
-test("a path outside the matcher is served without a session", async ({ page }) => {
-  // The counterpart assertion, and the reason the matcher is a list rather than
-  // a catch-all: /s/:token has to stay reachable signed out or the share links
+test("a path off the signed-in-only list is served without a session", async ({ page }) => {
+  // The counterpart assertion, and the reason the redirect covers a list rather than
+  // everything: /s/:token has to stay reachable signed out or the share links
   // the previous spec exercises would all bounce to /auth. An unknown token is
   // a 404 from the page itself — which is a response, not a redirect.
   const response = await page.goto("/s/definitely-not-a-real-share-token");

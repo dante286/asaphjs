@@ -41,6 +41,10 @@ on `node:24-alpine`, so 24 is the version to match if you want local dev and Doc
    docker compose up -d db
    ```
 
+   It listens on `127.0.0.1:5432` only, with the development password already in
+   `.env.example`'s `DATABASE_URL`. That default is for your own machine; anything others can
+   reach should set `POSTGRES_PASSWORD` — see [Running with Compose](self-hosting.md#running-with-compose).
+
    (Standalone `docker run` also works — see the `db` service definition for the
    equivalent flags. Postgres 18+ images expect their volume mounted at
    `/var/lib/postgresql`, not the older `/var/lib/postgresql/data`.)

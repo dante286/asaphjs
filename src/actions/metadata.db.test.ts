@@ -120,7 +120,7 @@ describe("applyLookupAction", () => {
 
   it("leaves an owner's own value alone unless told to overwrite", async () => {
     providerServer.use(missingCoverHandler());
-    await patchItem(itemId, { values: { author: "Someone I typed" } });
+    await patchItem(collectionId, itemId, { values: { author: "Someone I typed" } });
 
     const result = await actions.applyLookupAction({ collectionId, itemId, sourceId: OL_WORK_KEY });
 
@@ -131,7 +131,7 @@ describe("applyLookupAction", () => {
 
   it("overwrites when asked", async () => {
     providerServer.use(missingCoverHandler());
-    await patchItem(itemId, { values: { author: "Someone I typed" } });
+    await patchItem(collectionId, itemId, { values: { author: "Someone I typed" } });
 
     const result = await actions.applyLookupAction({
       collectionId,
@@ -263,7 +263,7 @@ describe("rerunLookupAction", () => {
   it("refetches past the cache and overwrites", async () => {
     providerServer.use(missingCoverHandler());
     await actions.applyLookupAction({ collectionId, itemId, sourceId: OL_WORK_KEY });
-    await patchItem(itemId, { values: { author: "Edited since" } });
+    await patchItem(collectionId, itemId, { values: { author: "Edited since" } });
 
     const result = await actions.rerunLookupAction({ collectionId, itemId });
 

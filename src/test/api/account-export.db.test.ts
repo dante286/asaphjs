@@ -61,6 +61,18 @@ describe("the CSV export", () => {
     expect(body).toContain('"line one\nline two"');
   });
 
+  it("defuses a value a spreadsheet would run as a formula", async () => {
+    // Titles and values come from editors, imports and providers; the owner
+    // opening their own export mustn't run what someone else typed.
+    const collection = await aCollection({ ownerId: owner.id, name: "Games" });
+    await createItem({ collectionId: collection.id, title: '=HYPERLINK("https://evil.example","x")' });
+
+    const body = await (await csvRoute.GET()).text();
+
+    expect(body).toContain('"\'=HYPERLINK(""https://evil.example"",""x"")"');
+    expect(body).not.toMatch(/^=/m);
+  });
+
   it("leaves an unset value as an empty cell", async () => {
     const collection = await aCollection({ ownerId: owner.id, name: "Books" });
     await createItem({ collectionId: collection.id, title: "Sparse" });

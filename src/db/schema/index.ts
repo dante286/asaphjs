@@ -19,6 +19,7 @@ export * from "./metadata-search-cache";
 export * from "./import-batches";
 export * from "./view-preferences";
 export * from "./registration-invites";
+export * from "./auth-rate-limits";
 
 export const templatesRelations = relations(templates, ({ one }) => ({
   owner: one(user, { fields: [templates.ownerId], references: [user.id] }),

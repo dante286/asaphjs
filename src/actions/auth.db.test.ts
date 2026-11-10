@@ -432,14 +432,11 @@ describe("signOutAction", () => {
 
     await actions.signOutAction().catch(() => {});
 
-    // The token cookie on its own, for the same reason signOutEverywhereAction's
-    // spec does it that way: the five-minute `cookieCache` copy still reads as a
-    // session inside its window, so presenting the whole cookie header would
-    // pass here whether or not anything was actually revoked.
-    const token = owner.cookie.split("; ").find((c) => c.startsWith("better-auth.session_token="))!;
+    // The whole cookie header the device kept. Nothing cached in it can answer
+    // for the revoked session (`session.cookieCache` is off).
     const { auth } = await import("@/lib/auth/auth");
 
-    expect(await auth.api.getSession({ headers: new Headers({ cookie: token }) })).toBeNull();
+    expect(await auth.api.getSession({ headers: new Headers({ cookie: owner.cookie }) })).toBeNull();
   });
 
   it("still sends a caller with no session to the sign-in form", async () => {

@@ -3,8 +3,11 @@
 import { nanoid } from "nanoid";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
-import { inviteEmail, sendEmail } from "@/lib/email";
+import { emailConfigured, inviteEmail, sendEmail } from "@/lib/email";
+import { inviteEmailAllowed } from "@/lib/invites/email-limits";
+import { mayInvite } from "@/lib/auth/email-verification";
 import { requestOrigin } from "@/lib/request-origin";
 import { resolveRole } from "@/db/queries/members";
 import {
@@ -22,13 +25,26 @@ async function requireOwner(collectionId: string, userId: string) {
 }
 
 /**
+ * The roles an invite can grant. Typed on the parameters too, but a Server
+ * Action's arguments are whatever the POST says, so they're parsed. The
+ * database's check constraint would refuse anything else, as a 500.
+ */
+const memberRoleSchema = z.enum(["viewer", "editor"]);
+
+function parseRole(role: unknown): "viewer" | "editor" {
+  const parsed = memberRoleSchema.safeParse(role);
+  if (!parsed.success) throw new Error("That isn't a role an invite can grant.");
+  return parsed.data;
+}
+
+/**
  * What became of the invite email. The invite itself exists in every case but
  * `already_member` — mail is how the link travels, not what makes it valid.
  */
 export type InviteEmailOutcome = "sent" | "not_configured" | "failed";
 
 export type InviteResult =
-  | { ok: false; reason: "already_member" }
+  | { ok: false; reason: "already_member" | "invalid_email" | "rate_limited" | "unverified" }
   | {
       ok: true;
       invitedEmail: string;
@@ -45,11 +61,25 @@ export async function inviteMemberAction(
 ): Promise<InviteResult> {
   const session = await requireSession();
   await requireOwner(collectionId, session.user.id);
+  const grantedRole = parseRole(role);
+
+  const address = String(email ?? "").trim().toLowerCase();
+  if (!z.email().safeParse(address).success) return { ok: false, reason: "invalid_email" };
+
+  // An invite email goes out under this account's name; the account has to
+  // own the address it signed up with first.
+  if (!(await mayInvite(session.user.id))) return { ok: false, reason: "unverified" };
+
+  // Before the invite is written, so a refused attempt leaves any earlier
+  // invite and its link exactly as they were.
+  if (emailConfigured() && !(await inviteEmailAllowed(session.user.id, address))) {
+    return { ok: false, reason: "rate_limited" };
+  }
 
   const member = await inviteMember({
     collectionId,
-    invitedEmail: email.toLowerCase().trim(),
-    role,
+    invitedEmail: address,
+    role: grantedRole,
     invitedBy: session.user.id,
   });
   // Already accepted: the query left them as they were, and there's nothing to
@@ -68,7 +98,7 @@ export async function inviteMemberAction(
         to: member.invitedEmail,
         inviterName: session.user.name || session.user.email,
         collectionName: collection?.name ?? "a collection",
-        role,
+        role: grantedRole,
         url: inviteUrl,
         expiresInDays: INVITE_TTL_DAYS,
       }),
@@ -82,7 +112,7 @@ export async function inviteMemberAction(
     outcome = "failed";
   }
 
-  return { ok: true, invitedEmail: member.invitedEmail, role, inviteUrl, email: outcome };
+  return { ok: true, invitedEmail: member.invitedEmail, role: grantedRole, inviteUrl, email: outcome };
 }
 
 export async function updateMemberRoleAction(
@@ -92,7 +122,7 @@ export async function updateMemberRoleAction(
 ) {
   const session = await requireSession();
   await requireOwner(collectionId, session.user.id);
-  await updateMemberRole(collectionId, invitedEmail, role);
+  await updateMemberRole(collectionId, invitedEmail, parseRole(role));
 }
 
 export async function removeMemberAction(collectionId: string, invitedEmail: string) {

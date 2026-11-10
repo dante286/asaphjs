@@ -28,9 +28,18 @@ export type MemberRow = {
 /** What the owner is told after Invite, keyed by what happened to the email. */
 function inviteNotice(result: InviteResult, email: string): { text: string; warn: boolean } {
   if (!result.ok) {
-    // Re-inviting used to reset an accepted member and revoke their access;
-    // now the query leaves them be, and this says why nothing happened.
-    return { text: `${email} already has access — change their role in the list above.`, warn: false };
+    switch (result.reason) {
+      case "invalid_email":
+        return { text: `${email} isn't a valid email address.`, warn: true };
+      case "rate_limited":
+        return { text: "You've sent a lot of invites recently. Try again tomorrow.", warn: true };
+      case "unverified":
+        return { text: "Confirm your email address first. There's a button for it under Profile, above.", warn: true };
+      case "already_member":
+        // Re-inviting used to reset an accepted member and revoke their access;
+        // now the query leaves them be, and this says why nothing happened.
+        return { text: `${email} already has access — change their role in the list above.`, warn: false };
+    }
   }
   switch (result.email) {
     case "sent":
@@ -130,7 +139,8 @@ export function SharingCard({
           },
         ]);
       }
-      setInviteEmail("");
+      // Kept on a refusal, so a mistyped address can be fixed rather than retyped.
+      if (result.ok || result.reason === "already_member") setInviteEmail("");
     });
   }
 

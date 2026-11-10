@@ -195,6 +195,9 @@ describe("registration with an invite token", () => {
     const { user } = await signUp(auth, "Invited@Asaph.test", token);
 
     expect(user.email).toBe(EMAIL);
+    // The invite was emailed to this address, so redeeming it already proves
+    // the inbox: no separate confirmation is asked for.
+    expect(user.emailVerified).toBe(true);
     const { db } = await import("@/db/client");
     const invite = await db.query.registrationInvites.findFirst({ where: eq(registrationInvites.email, EMAIL) });
     expect(invite?.usedAt).toBeInstanceOf(Date);
@@ -322,5 +325,36 @@ describe("password reset", () => {
     const auth = await freshAuth();
 
     expect(await resetCode(auth)).toBe("offered");
+  });
+});
+
+describe("session cookies", () => {
+  it("are Secure, with the __Secure- prefix, when BETTER_AUTH_URL is https", async () => {
+    vi.stubEnv("BETTER_AUTH_URL", "https://asaph.example.com");
+    const auth = await freshAuth();
+    const { user } = await auth.api.signUpEmail({
+      body: { email: "secure@asaph.test", password: TEST_PASSWORD, name: "Secure" },
+      headers: new Headers({ "x-forwarded-for": "198.51.100.40" }),
+    });
+    const response = await auth.api.signInEmail({
+      body: { email: user.email, password: TEST_PASSWORD },
+      headers: new Headers({ "x-forwarded-for": "198.51.100.40" }),
+      asResponse: true,
+    });
+
+    const sessionCookie = response.headers.getSetCookie().find((c) => c.includes("session_token="))!;
+    expect(sessionCookie).toMatch(/^__Secure-/);
+    expect(sessionCookie).toMatch(/; Secure/i);
+    expect(sessionCookie).toMatch(/; HttpOnly/i);
+  });
+});
+
+describe("session checks", () => {
+  it("always ask the database, so a revoked session stops working at once", async () => {
+    // With `cookieCache` on, a signed copy of the session in a cookie answered
+    // for up to its maxAge without a lookup, so sign out everywhere, a password
+    // change or a reset left devices signed in for minutes afterwards.
+    const auth = await freshAuth();
+    expect(auth.options.session?.cookieCache?.enabled).toBe(false);
   });
 });

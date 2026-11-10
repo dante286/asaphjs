@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/client";
@@ -7,6 +7,16 @@ import { deleteUploadsForOwner } from "@/db/queries/collections";
 import { findInviteByToken, markInviteUsed } from "@/db/queries/registration-invites";
 import { passwordResetAvailable, RESET_TOKEN_TTL_SECONDS, sendResetPasswordEmail } from "./password-reset";
 import { signupsAllowed } from "./signups";
+import {
+  emailVerificationAvailable,
+  sendVerificationEmail,
+  VERIFICATION_TOKEN_TTL_SECONDS,
+} from "./email-verification";
+import { clientIp, ipAddressOptions, limitAuthAttempt, recordAuthSuccess } from "./rate-limit";
+import { servedOverHttps } from "@/lib/security-headers";
+import { logDeploymentWarnings } from "./deployment-warnings";
+
+logDeploymentWarnings();
 
 /**
  * Read once, at module evaluation, like the rest of this config: changing
@@ -115,6 +125,9 @@ export const auth = betterAuth({
           if (signupsOpen) return;
 
           if (!(await inviteAdmits(inviteTokenFrom(ctx), user.email))) throw signUpClosed();
+          // A registration invite is only ever emailed (no copy-link fallback),
+          // so redeeming one already proves this inbox: no need to verify again.
+          return { data: { ...user, emailVerified: true } };
         },
         /**
          * Better Auth queues this until the sign-up transaction commits, so a
@@ -146,24 +159,63 @@ export const auth = betterAuth({
      * creating a user.
      */
     before: createAuthMiddleware(async (ctx) => {
+      // First, so a refused attempt costs no lookup and is counted either way.
+      // See `./rate-limit` for why the limits live here rather than in Better
+      // Auth's own limiter, which Server Action calls never reach.
+      await limitAuthAttempt({
+        path: ctx.path,
+        ip: clientIp(ctx.headers ?? ctx.request?.headers, ctx.context.options),
+        body: ctx.body,
+      });
+
       if (signupsOpen || ctx.path !== "/sign-up/email") return;
       const email = (ctx.body as { email?: unknown } | undefined)?.email;
       if (!(await inviteAdmits(inviteTokenFrom(ctx), email))) throw signUpClosed();
     }),
+    /**
+     * A sign-in that worked clears its address's attempt count. `returned` is
+     * the endpoint's result, or the APIError it threw, so anything that isn't
+     * an error here is a success.
+     */
+    after: createAuthMiddleware(async (ctx) => {
+      if (isAPIError(ctx.context.returned)) return;
+      await recordAuthSuccess({ path: ctx.path, body: ctx.body });
+    }),
+  },
+  advanced: {
+    // Shared by Better Auth's own HTTP limiter and the attempt limits above,
+    // so both agree on who a client is behind a proxy.
+    ipAddress: ipAddressOptions(),
+    // From BETTER_AUTH_URL, the same answer the security headers use: behind a
+    // TLS-terminating proxy the request is plain http, so it can't be asked.
+    // Undefined (not false) otherwise, which leaves Better Auth's own fallback:
+    // Secure in production. `deploymentWarnings` tells the operator when that
+    // fallback is all there is.
+    useSecureCookies: servedOverHttps() ? true : undefined,
   },
   session: {
     expiresIn: 60 * 60 * 24 * 30, // 30 days
     updateAge: 60 * 60 * 24, // rolling refresh once a day
+    // Off, so every session check reads the session table. With the cache on,
+    // a signed copy of the session in a cookie answered for up to its maxAge
+    // without asking the database, and a revoked session (sign out everywhere,
+    // a password change or reset) kept working on any device holding a fresh
+    // copy. The cost is one indexed lookup per request.
     cookieCache: {
-      enabled: true,
-      maxAge: 60 * 5,
+      enabled: false,
     },
   },
-  emailVerification: {
-    sendVerificationEmail: async ({ user, url }) => {
-      console.log(`[dev email stub] verification link for ${user.email}: ${url}`);
-    },
-  },
+  // Wired in only when it can work, like `sendResetPassword`: mail configured
+  // and BETTER_AUTH_URL set. Verification doesn't gate signing in. It gates
+  // sending invites (`mayInvite`), the one thing an unproven address could
+  // abuse. Absent, `/send-verification-email` answers VERIFICATION_EMAIL_NOT_ENABLED.
+  emailVerification: emailVerificationAvailable()
+    ? {
+        sendVerificationEmail,
+        sendOnSignUp: true,
+        expiresIn: VERIFICATION_TOKEN_TTL_SECONDS,
+      }
+    : undefined,
   // Must be the last plugin — lets Server Actions set session cookies directly.
   plugins: [nextCookies()],
 });

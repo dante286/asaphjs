@@ -8,7 +8,7 @@ import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
  * on page load could pass for a link that then expires while the person types.
  * An expired or used one gets its answer on submit.
  *
- * Outside the middleware's matcher, so it's reachable signed out — which is the
+ * Not on the proxy's signed-in-only list, so it's reachable signed out — which is the
  * whole point of it.
  */
 export default async function ResetPasswordPage({ searchParams }: { searchParams: Promise<{ token?: string }> }) {

@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { importBatches, items } from "@/db/schema";
 import type { ImportRowError } from "@/db/schema/import-batches";
 import type { FieldDef } from "@/lib/fields/field-def";
 import { isTitleField } from "@/lib/fields/item-values";
-import { deleteUploads } from "@/lib/uploads/files";
+import { releaseUploads } from "./uploads";
 import type { ImportMappings } from "@/types";
 
 const TRUE_VALUES = new Set(["y", "yes", "true", "1"]);
@@ -116,14 +116,22 @@ export async function commitImport(params: CommitImportParams) {
   return { batchId: batch.id, inserted: toInsert.length, errors };
 }
 
-export async function rollbackImportBatch(batchId: string) {
+/**
+ * Undoes one import into `collectionId`. A batch id from any other collection
+ * matches nothing, so it is a no-op rather than a way to reach into a
+ * collection the caller was never authorized against.
+ */
+export async function rollbackImportBatch(collectionId: string, batchId: string) {
   // An imported row starts without a cover, but nothing stops someone adding a
   // photo (or running a lookup) before deciding the whole batch was a mistake.
   const removed = await db
     .delete(items)
-    .where(eq(items.importBatchId, batchId))
+    .where(and(eq(items.importBatchId, batchId), eq(items.collectionId, collectionId)))
     .returning({ coverUrl: items.coverUrl });
 
-  await db.update(importBatches).set({ status: "rolled_back" }).where(eq(importBatches.id, batchId));
-  await deleteUploads(removed.map((row) => row.coverUrl));
+  await db
+    .update(importBatches)
+    .set({ status: "rolled_back" })
+    .where(and(eq(importBatches.id, batchId), eq(importBatches.collectionId, collectionId)));
+  await releaseUploads(removed.map((row) => row.coverUrl));
 }

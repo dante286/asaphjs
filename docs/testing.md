@@ -229,10 +229,11 @@ What the four specs cover:
   Client Component, and its rows are serialized into the RSC payload whether or not a given
   column is on screen. Both needles are plain ASCII, since an escaped apostrophe would make
   `not.toContain` pass for the wrong reason.
-- **The middleware redirect.** `middleware.ts` is imported by nothing and appears in no
+- **The proxy redirect.** `proxy.ts` is imported by nothing and appears in no
   trace anyone reads; a build that dropped it would be green everywhere else while leaving
   every protected page open. Includes the counterpart — `/s/:token` still answers signed
-  out, which is why the matcher is a list rather than a catch-all.
+  out, which is why the redirect applies to a list of paths rather than to everything the
+  proxy sees.
 - **Missing provider keys degrade quietly.** The server runs with no IGDB or TMDB
   credentials: no lookup panel in either the create dialog or the detail page, and item
   creation still works. The end-to-end form of the constraint the whole strategy is built

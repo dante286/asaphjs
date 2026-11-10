@@ -16,7 +16,8 @@ import {
 import { resolveRole } from "@/db/queries/members";
 
 const createCollectionSchema = z.object({
-  name: z.string().min(1),
+  // Same cap as renaming; without it a create could store a name of any size.
+  name: z.string().trim().min(1).max(120),
   templateKey: z.string().nullable(),
   fields: z.array(fieldDefSchema).min(1),
   defaultView: z.enum(["covers", "table"]).default("covers"),
@@ -44,11 +45,12 @@ const collectionSettingsPatchSchema = z
       verified: z.boolean().optional(),
       lookup: providerKeySchema.optional(),
     }),
-    shareEnabled: z.boolean(),
-    shareToken: z.string().nullable(),
-    importMappings: z.record(z.string(), z.string()),
   })
   .partial();
+// Deliberately not here: `shareEnabled` and `shareToken`, which only
+// togglePublicLinkAction and rotateShareTokenAction set, so a share token is
+// always one the server minted (never a guessable string a client chose); and
+// `importMappings`, which the import action writes from what it was given.
 
 export async function createCollectionAction(input: z.infer<typeof createCollectionSchema>) {
   const session = await requireSession();

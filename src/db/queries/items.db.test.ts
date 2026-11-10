@@ -140,7 +140,7 @@ describe("patchItem", () => {
   it("merges the given jsonb keys and leaves the rest", async () => {
     const item = await anItem("Chrono Trigger", { values: { console: "SNES", region: "NTSC", paid: 220 } });
 
-    const result = await patchItem(item.id, { values: { console: "SNES Mini", boxed: true } });
+    const result = await patchItem(collectionId, item.id, { values: { console: "SNES Mini", boxed: true } });
 
     expect(result.ok).toBe(true);
     // `||` merges rather than replaces: per-field autosave sends one key at a
@@ -156,7 +156,7 @@ describe("patchItem", () => {
   it("deletes the keys sent as null", async () => {
     const item = await anItem("Chrono Trigger", { values: { console: "SNES", region: "NTSC" } });
 
-    const result = await patchItem(item.id, { values: { region: null } });
+    const result = await patchItem(collectionId, item.id, { values: { region: null } });
 
     // Removed, not set to null — an absent key is what "unset" means to
     // everything that reads `values`.
@@ -166,7 +166,7 @@ describe("patchItem", () => {
   it("merges and deletes in one patch", async () => {
     const item = await anItem("Chrono Trigger", { values: { console: "SNES", region: "NTSC" } });
 
-    const result = await patchItem(item.id, { values: { console: "SFC", region: null, boxed: true } });
+    const result = await patchItem(collectionId, item.id, { values: { console: "SFC", region: null, boxed: true } });
 
     expect(result.ok && result.item.values).toEqual({ console: "SFC", boxed: true });
   });
@@ -174,7 +174,7 @@ describe("patchItem", () => {
   it("leaves values untouched when the patch doesn't mention them", async () => {
     const item = await anItem("Chrono Trigger", { values: { console: "SNES" } });
 
-    const result = await patchItem(item.id, { title: "Chrono Trigger (JP)" });
+    const result = await patchItem(collectionId, item.id, { title: "Chrono Trigger (JP)" });
 
     expect(result.ok && result.item).toMatchObject({
       title: "Chrono Trigger (JP)",
@@ -187,7 +187,7 @@ describe("patchItem", () => {
     // user's own text has to travel as data.
     const item = await anItem("Chrono Trigger");
 
-    const result = await patchItem(item.id, {
+    const result = await patchItem(collectionId, item.id, {
       values: { notes: `{"injected": true}'; drop table items; --`, quote: 'a "quoted" word' },
     });
 
@@ -203,7 +203,7 @@ describe("patchItem", () => {
     // from a loan and clearing a note all send falsy values.
     const item = await anItem("Chrono Trigger", { verified: true, borrower: "Alex", notes: "keep" });
 
-    const result = await patchItem(item.id, { verified: false, borrower: null, notes: "" });
+    const result = await patchItem(collectionId, item.id, { verified: false, borrower: null, notes: "" });
 
     expect(result.ok && result.item).toMatchObject({ verified: false, borrower: null, notes: "" });
   });
@@ -211,7 +211,7 @@ describe("patchItem", () => {
   it("writes the fixed columns, including a lent-on date", async () => {
     const item = await anItem("Chrono Trigger");
 
-    const result = await patchItem(item.id, {
+    const result = await patchItem(collectionId, item.id, {
       coverUrl: "/api/uploads/abc.webp",
       borrower: "Alex",
       lentOn: "2026-09-04",
@@ -231,19 +231,19 @@ describe("patchItem", () => {
     const item = await anItem("Chrono Trigger");
     const ref = { source: "igdb", id: "1017", fetchedAt: "2026-09-04T00:00:00.000Z" };
 
-    const applied = await patchItem(item.id, { externalRef: ref });
+    const applied = await patchItem(collectionId, item.id, { externalRef: ref });
     expect(applied.ok && applied.item.externalRef).toEqual(ref);
 
     // Unmatching an item has to be expressible too, and null is a value here
     // rather than "leave it alone".
-    const cleared = await patchItem(item.id, { externalRef: null });
+    const cleared = await patchItem(collectionId, item.id, { externalRef: null });
     expect(cleared.ok && cleared.item.externalRef).toBeNull();
   });
 
   it("recomputes the sort title after a rename", async () => {
     const item = await anItem("Chrono Trigger");
 
-    const result = await patchItem(item.id, { title: "Zelda" });
+    const result = await patchItem(collectionId, item.id, { title: "Zelda" });
 
     expect(result.ok && result.item.sortTitle).toBe("zelda");
   });
@@ -251,14 +251,14 @@ describe("patchItem", () => {
   it("moves updatedAt forward", async () => {
     const item = await anItem("Chrono Trigger");
 
-    const result = await patchItem(item.id, { title: "Renamed" });
+    const result = await patchItem(collectionId, item.id, { title: "Renamed" });
 
     // What If-Match is compared against, so it has to change on every write.
     expect(result.ok && result.item.updatedAt.getTime()).toBeGreaterThan(item.updatedAt.getTime());
   });
 
   it("reports a missing item rather than throwing", async () => {
-    expect(await patchItem("00000000-0000-0000-0000-000000000000", { title: "x" })).toEqual({
+    expect(await patchItem(collectionId, "00000000-0000-0000-0000-000000000000", { title: "x" })).toEqual({
       ok: false,
       reason: "not_found",
     });
@@ -268,7 +268,7 @@ describe("patchItem", () => {
     it("accepts the version the caller last saw", async () => {
       const item = await anItem("Chrono Trigger");
 
-      const result = await patchItem(item.id, { title: "Renamed" }, item.updatedAt.toISOString());
+      const result = await patchItem(collectionId, item.id, { title: "Renamed" }, item.updatedAt.toISOString());
 
       expect(result.ok).toBe(true);
     });
@@ -276,9 +276,9 @@ describe("patchItem", () => {
     it("refuses a stale version and hands back the current row", async () => {
       const item = await anItem("Chrono Trigger");
       const stale = item.updatedAt.toISOString();
-      await patchItem(item.id, { title: "Renamed by someone else" });
+      await patchItem(collectionId, item.id, { title: "Renamed by someone else" });
 
-      const result = await patchItem(item.id, { title: "Renamed by me" }, stale);
+      const result = await patchItem(collectionId, item.id, { title: "Renamed by me" }, stale);
 
       // The current row comes back with the refusal: the conflict UI shows what
       // the other writer put there rather than making the client refetch.
@@ -292,7 +292,7 @@ describe("patchItem", () => {
       const item = await anItem("Chrono Trigger", { values: { console: "SNES" } });
       const stale = new Date(item.updatedAt.getTime() - 1000).toISOString();
 
-      await patchItem(item.id, { title: "Nope", values: { console: null } }, stale);
+      await patchItem(collectionId, item.id, { title: "Nope", values: { console: null } }, stale);
 
       expect(await getItem(item.id)).toMatchObject({
         title: "Chrono Trigger",
@@ -308,8 +308,8 @@ describe("patchItem", () => {
       const version = item.updatedAt.toISOString();
 
       const [first, second] = await Promise.all([
-        patchItem(item.id, { title: "Writer A" }, version),
-        patchItem(item.id, { title: "Writer B" }, version),
+        patchItem(collectionId, item.id, { title: "Writer A" }, version),
+        patchItem(collectionId, item.id, { title: "Writer B" }, version),
       ]);
 
       const outcomes = [first.ok, second.ok].sort();
@@ -318,11 +318,38 @@ describe("patchItem", () => {
   });
 });
 
+describe("collection scoping", () => {
+  // Callers authorize against a collection, so an item from any other one has
+  // to read as not found — never be written through the collection named.
+  async function itemElsewhere() {
+    const other = await aCollection({ ownerId: (await createTestUser()).id, name: "Elsewhere" });
+    return createItem({ collectionId: other.id, title: "Theirs" });
+  }
+
+  it("patchItem treats another collection's item as not found", async () => {
+    const theirs = await itemElsewhere();
+
+    expect(await patchItem(collectionId, theirs.id, { title: "Hijacked" })).toEqual({
+      ok: false,
+      reason: "not_found",
+    });
+    expect(await getItem(theirs.id)).toMatchObject({ title: "Theirs" });
+  });
+
+  it("deleteItem leaves another collection's item alone", async () => {
+    const theirs = await itemElsewhere();
+
+    await deleteItem(collectionId, theirs.id);
+
+    expect(await getItem(theirs.id)).toBeTruthy();
+  });
+});
+
 describe("deleteItem", () => {
   it("removes the row", async () => {
     const item = await anItem("Chrono Trigger");
 
-    await deleteItem(item.id);
+    await deleteItem(collectionId, item.id);
 
     expect(await getItem(item.id)).toBeUndefined();
   });
@@ -334,14 +361,14 @@ describe("deleteItem", () => {
     const coverUrl = await writeTestUpload("itemcover00000000000.webp");
     const item = await anItem("Chrono Trigger", { coverUrl });
 
-    await deleteItem(item.id);
+    await deleteItem(collectionId, item.id);
 
     expect(existsSync(path.join(UPLOADS_DIR, "itemcover00000000000.webp"))).toBe(false);
     expect(existsSync(path.join(UPLOADS_DIR, "itemcover00000000000_t.webp"))).toBe(false);
   });
 
   it("does nothing for an id that isn't there", async () => {
-    await expect(deleteItem("00000000-0000-0000-0000-000000000000")).resolves.toBeUndefined();
+    await expect(deleteItem(collectionId, "00000000-0000-0000-0000-000000000000")).resolves.toBeUndefined();
   });
 });
 

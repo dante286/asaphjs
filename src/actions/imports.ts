@@ -14,6 +14,13 @@ import { csvByteSize, fromCsvPayload, type CsvPayload } from "@/lib/csv/payload"
 const csvSchema = z.object({ headers: z.array(z.string()), rows: z.array(z.object({ cells: z.array(z.string()) })) });
 const mappingSchema = z.record(z.string(), z.string());
 
+/** What else the new-collection import takes from the client, parsed like `createCollectionAction`'s. */
+const newCollectionSettingsSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  defaultView: z.enum(["covers", "table"]).optional(),
+  features: z.object({ verified: z.boolean().optional(), lending: z.boolean().optional() }).optional(),
+});
+
 /**
  * The picker turns away a file over the cap before it's read, but the action is
  * a public endpoint. The size comes back as a value rather than a throw, since
@@ -36,17 +43,22 @@ export async function importCsvIntoNewCollectionAction(input: {
   const session = await requireSession();
   const fields = z.array(fieldDefSchema).parse(input.fields);
   const mapping = mappingSchema.parse(input.mapping);
+  const settings = newCollectionSettingsSchema.parse({
+    name: input.name,
+    defaultView: input.defaultView,
+    features: input.features,
+  });
   const parsed = parseRows(input.csv);
   if ("error" in parsed) return parsed;
   const { rows } = parsed;
 
   const collection = await createCollection({
     ownerId: session.user.id,
-    name: input.name,
+    name: settings.name,
     templateKey: null,
     fields,
-    defaultView: input.defaultView,
-    features: input.features,
+    defaultView: settings.defaultView,
+    features: settings.features,
   });
 
   const result = await commitImport({ collectionId: collection.id, fields, mapping, rows });
@@ -80,5 +92,5 @@ export async function rollbackImportBatchAction(collectionId: string, batchId: s
   const session = await requireSession();
   const role = await resolveRole(collectionId, session.user.id);
   if (role !== "owner" && role !== "editor") throw new Error("Not authorized.");
-  await rollbackImportBatch(batchId);
+  await rollbackImportBatch(collectionId, batchId);
 }

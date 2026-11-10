@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
 import { getCollectionById } from "@/db/queries/collections";
+import { user as userTable } from "@/db/schema";
 import { listMembers, resolveRole } from "@/db/queries/members";
 import { aCollection, createTestUser, type TestUser } from "@/test/db/fixtures";
 import { signedInAs, signedOut } from "@/test/db/session";
@@ -35,6 +38,7 @@ vi.mock("@/lib/email", async (importOriginal) => ({
 }));
 
 const actions = await import("./members");
+const { INVITE_EMAIL_LIMITS } = await import("@/lib/invites/email-limits");
 
 let owner: TestUser;
 let editor: TestUser;
@@ -184,11 +188,134 @@ describe("inviteMemberAction: the email", () => {
   });
 });
 
+describe("inviteMemberAction: what it accepts", () => {
+  it("refuses something that isn't an email address, and writes nothing", async () => {
+    const before = await listMembers(collectionId);
+
+    for (const email of ["not-an-address", "", "   ", "a@b", "guest@asaph.test\nBcc: x@evil.test"]) {
+      expect(await actions.inviteMemberAction(collectionId, email, "viewer")).toEqual({
+        ok: false,
+        reason: "invalid_email",
+      });
+    }
+    expect(await listMembers(collectionId)).toEqual(before);
+    expect(mail.send).not.toHaveBeenCalled();
+  });
+
+  it("refuses a role an invite can't grant", async () => {
+    // Only reachable by calling the action directly: the card offers two roles.
+    await expect(
+      actions.inviteMemberAction(collectionId, "guest@asaph.test", "owner" as unknown as "viewer"),
+    ).rejects.toThrow("That isn't a role an invite can grant.");
+    expect(mail.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("inviteMemberAction: email limits", () => {
+  // `emailConfigured()` reads these per call; the limits apply only when mail
+  // would actually go out.
+  beforeEach(async () => {
+    vi.stubEnv("SMTP_HOST", "smtp.asaph.test");
+    vi.stubEnv("EMAIL_FROM", "Asaph <asaph@asaph.test>");
+    // With mail configured, inviting needs a confirmed address.
+    await markVerified(owner.id);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("caps how many invites one owner sends in a day", async () => {
+    // The beforeEach invite of the editor went out with mail unconfigured, so
+    // it didn't count.
+    for (let i = 0; i < INVITE_EMAIL_LIMITS.perInviter.max; i++) await invited(`guest-${i}@asaph.test`, "viewer");
+    mail.send.mockClear();
+
+    expect(await actions.inviteMemberAction(collectionId, "one-more@asaph.test", "viewer")).toEqual({
+      ok: false,
+      reason: "rate_limited",
+    });
+    expect(mail.send).not.toHaveBeenCalled();
+    expect((await listMembers(collectionId)).map((m) => m.invitedEmail)).not.toContain("one-more@asaph.test");
+  });
+
+  it("caps how many invites one address receives, whoever sends them", async () => {
+    // Different owners, different collections: the inbox is what's protected.
+    for (let i = 0; i < INVITE_EMAIL_LIMITS.perRecipient.max; i++) {
+      const someone = await createTestUser({ verified: true });
+      const theirs = await aCollection({ ownerId: someone.id });
+      signedInAs(someone);
+      expect((await actions.inviteMemberAction(theirs.id, "Target@asaph.test", "viewer")).ok).toBe(true);
+    }
+
+    const another = await createTestUser({ verified: true });
+    const theirs = await aCollection({ ownerId: another.id });
+    signedInAs(another);
+    expect(await actions.inviteMemberAction(theirs.id, "target@asaph.test", "viewer")).toEqual({
+      ok: false,
+      reason: "rate_limited",
+    });
+  });
+
+  it("leaves the last invite's link working when a re-invite is refused", async () => {
+    let latest = await invited("guest@asaph.test", "viewer");
+    for (let i = 1; i < INVITE_EMAIL_LIMITS.perRecipient.max; i++) latest = await invited("guest@asaph.test", "viewer");
+
+    // Refused before the row is touched, so the link already sent still works.
+    expect(await actions.inviteMemberAction(collectionId, "guest@asaph.test", "viewer")).toEqual({
+      ok: false,
+      reason: "rate_limited",
+    });
+
+    const guest = await createTestUser({ email: "guest@asaph.test" });
+    await signedInAsAndAccept(guest, latest.token);
+    expect(await resolveRole(collectionId, guest.id)).toBe("viewer");
+  });
+
+  it("doesn't count when the instance sends no mail", async () => {
+    vi.unstubAllEnvs();
+    for (let i = 0; i < INVITE_EMAIL_LIMITS.perInviter.max + 5; i++) await invited(`guest-${i}@asaph.test`, "viewer");
+  });
+});
+
+async function markVerified(userId: string) {
+  await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, userId));
+}
+
+describe("inviteMemberAction: a confirmed address", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is needed to invite when the instance can send confirmation emails", async () => {
+    vi.stubEnv("SMTP_HOST", "smtp.asaph.test");
+    vi.stubEnv("EMAIL_FROM", "Asaph <asaph@asaph.test>");
+    vi.stubEnv("BETTER_AUTH_URL", "https://asaph.example.com");
+
+    expect(await actions.inviteMemberAction(collectionId, "guest@asaph.test", "viewer")).toEqual({
+      ok: false,
+      reason: "unverified",
+    });
+    expect(mail.send).not.toHaveBeenCalled();
+
+    // Read from the database, not the session, so it counts the moment it's set.
+    await markVerified(owner.id);
+    expect((await actions.inviteMemberAction(collectionId, "guest@asaph.test", "viewer")).ok).toBe(true);
+  });
+
+  it("isn't asked for where it couldn't be given", async () => {
+    // No mail: nobody can confirm anything, and nothing is emailed anyway.
+    expect((await actions.inviteMemberAction(collectionId, "guest@asaph.test", "viewer")).ok).toBe(true);
+  });
+});
+
 describe("updateMemberRoleAction", () => {
   it("promotes a member without making them re-accept", async () => {
     await actions.updateMemberRoleAction(collectionId, editor.email, "viewer");
 
     expect(await resolveRole(collectionId, editor.id)).toBe("viewer");
+  });
+
+  it("refuses a role an invite can't grant", async () => {
+    await expect(
+      actions.updateMemberRoleAction(collectionId, editor.email, "owner" as unknown as "viewer"),
+    ).rejects.toThrow("That isn't a role an invite can grant.");
+    expect(await resolveRole(collectionId, editor.id)).toBe("editor");
   });
 
   it("refuses an editor changing their own role", async () => {

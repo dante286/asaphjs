@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/db/client";
 import { createCollection } from "@/db/queries/collections";
-import { registrationInvites, templates } from "@/db/schema";
+import { registrationInvites, templates, user as userTable } from "@/db/schema";
 import { auth } from "@/lib/auth/auth";
 import { UPLOAD_URL_PREFIX, thumbNameFor } from "@/lib/uploads/urls";
 import type { FieldDef } from "@/lib/fields/field-def";
@@ -41,7 +41,14 @@ export type TestUser = {
   cookie: string;
 };
 
-export async function createTestUser(over: { email?: string; name?: string } = {}): Promise<TestUser> {
+/**
+ * `verified` marks the address confirmed, as clicking the emailed link would.
+ * Off by default, like a real sign-up. It matters wherever mail is configured,
+ * because sending invites needs it there (`mayInvite`).
+ */
+export async function createTestUser(
+  over: { email?: string; name?: string; verified?: boolean } = {},
+): Promise<TestUser> {
   userCount += 1;
   const email = over.email ?? `owner-${process.env.VITEST_POOL_ID ?? "1"}-${userCount}@asaph.test`;
   const name = over.name ?? `Owner ${userCount}`;
@@ -50,11 +57,18 @@ export async function createTestUser(over: { email?: string; name?: string } = {
   // in a browser — signed, and validated by the same code on the way back in.
   // One call gives both the row and the credential; signing in again afterwards
   // would just be a second scrypt verify.
+  //
+  // Each fixture sign-up comes from its own documentation-range address, so the
+  // per-IP sign-up limit (`src/lib/auth/rate-limit.ts`) never counts a test's
+  // setup against it. A call with no headers at all would share one bucket, by
+  // design, and a test that made more than a handful of users would trip it.
   const response = await auth.api.signUpEmail({
     body: { email, password: TEST_PASSWORD, name },
+    headers: new Headers({ "x-forwarded-for": `198.18.${userCount >> 8}.${userCount & 255}` }),
     asResponse: true,
   });
   const { user } = (await response.json()) as { user: { id: string } };
+  if (over.verified) await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, user.id));
 
   return { id: user.id, email, name, cookie: cookieHeaderFrom(response) };
 }

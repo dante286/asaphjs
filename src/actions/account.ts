@@ -4,12 +4,18 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
 import { auth } from "@/lib/auth/auth";
+import { emailVerificationAvailable, VERIFIED_CALLBACK_PATH } from "@/lib/auth/email-verification";
+import { TOO_MANY_ATTEMPTS } from "@/lib/auth/rate-limit";
 import { requireSession } from "@/lib/auth/session";
 import { listCollectionsForUser } from "@/db/queries/collections";
 import { listItems } from "@/db/queries/items";
+import { csvCell, csvSectionHeading } from "@/lib/csv/export";
 import { getFieldValue } from "@/lib/fields/item-values";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
+
+/** Where a successful password change lands; the account page reads the flag. Not exported: a "use server" module may export only async functions. */
+const PASSWORD_CHANGED_PATH = "/account?password=changed";
 
 export async function updateProfileAction(
   _prev: ActionState,
@@ -32,6 +38,20 @@ export async function updateProfileAction(
   return { ok: true };
 }
 
+/**
+ * Signs out every other device. A password change is often the answer to a
+ * suspected compromise, and leaving the intruder's session alive would make it
+ * pointless; password reset does the same. This device isn't signed out: Better
+ * Auth replaces its session with a fresh one and the `nextCookies` plugin sets
+ * that cookie from here.
+ *
+ * Success redirects rather than returning `{ ok }`. Returning re-renders the page
+ * inside this same request, from the request's original headers, which still
+ * carry the session token that was just revoked: the page's own session check
+ * fails and bounces to /auth. A redirect is rendered as a fresh request with
+ * the new cookie (sign-in relies on the same thing), and the page shows the
+ * confirmation from `?password=changed`.
+ */
 export async function changePasswordAction(
   _prev: ActionState,
   formData: FormData,
@@ -43,13 +63,14 @@ export async function changePasswordAction(
   try {
     await auth.api.changePassword({
       headers: await headers(),
-      body: { currentPassword, newPassword, revokeOtherSessions: false },
+      body: { currentPassword, newPassword, revokeOtherSessions: true },
     });
   } catch (err) {
     if (err instanceof APIError) return { error: err.message };
     return { error: "Couldn't change your password." };
   }
-  return { ok: true };
+  // Outside the try: `redirect` works by throwing.
+  redirect(PASSWORD_CHANGED_PATH);
 }
 
 /**
@@ -88,14 +109,38 @@ export async function deleteAccountAction(
   redirect("/auth");
 }
 
+/**
+ * Emails the signed-in account a verification link. The answer is the same
+ * whether or not mail went out (the sender logs why it didn't), apart from a
+ * hit limit, which is about this client rather than the account.
+ */
+export async function sendVerificationEmailAction(): Promise<ActionState> {
+  const session = await requireSession();
+  if (!emailVerificationAvailable()) return { error: "This instance can't send email, so there's nothing to verify." };
+
+  try {
+    await auth.api.sendVerificationEmail({
+      body: { email: session.user.email, callbackURL: VERIFIED_CALLBACK_PATH },
+      headers: await headers(),
+    });
+  } catch (err) {
+    const code = (err as { body?: { code?: unknown } } | null)?.body?.code;
+    // Verified in another tab since the page loaded: the job is done.
+    if (code === "EMAIL_ALREADY_VERIFIED") return { ok: true };
+    if (code === TOO_MANY_ATTEMPTS) return { error: (err as Error).message };
+    return { error: "Couldn't send the email. Try again." };
+  }
+  return { ok: true };
+}
+
+/**
+ * Every session, this device's included, so it ends on the sign-in form rather
+ * than on a page that would fail at the next click.
+ */
 export async function signOutEverywhereAction() {
   await requireSession();
   await auth.api.revokeSessions({ headers: await headers() });
-}
-
-function toCsvValue(v: unknown): string {
-  const s = v === null || v === undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  redirect("/auth");
 }
 
 export async function exportAllCsvAction() {
@@ -106,10 +151,10 @@ export async function exportAllCsvAction() {
   for (const { collection } of collectionRows) {
     const { rows } = await listItems({ collectionId: collection.id, pageSize: 10000 });
     const fields = collection.fields;
-    parts.push(`# ${collection.name}`);
-    parts.push(fields.map((f) => toCsvValue(f.label)).join(","));
+    parts.push(csvSectionHeading(collection.name));
+    parts.push(fields.map((f) => csvCell(f.label)).join(","));
     for (const item of rows) {
-      const line = fields.map((field, index) => toCsvValue(getFieldValue(item, field, index)));
+      const line = fields.map((field, index) => csvCell(getFieldValue(item, field, index)));
       parts.push(line.join(","));
     }
     parts.push("");

@@ -112,6 +112,24 @@ describe("PATCH", () => {
     });
   });
 
+  it("refuses a patch that isn't a layout, and stores nothing", async () => {
+    for (const body of [
+      { columnWidths: { title: "wide" } },
+      { columnWidths: { title: 10 ** 9 } },
+      { hiddenColumns: "title" },
+      { hiddenColumns: Array.from({ length: 501 }, (_, i) => `c${i}`) },
+      "not json",
+    ]) {
+      expect((await patch(body)).status).toBe(400);
+    }
+    expect(await getViewPreferences(owner.id, collectionId)).toEqual({ columnWidths: {}, hiddenColumns: [] });
+  });
+
+  it("refuses an oversized body", async () => {
+    const response = await patch({ hiddenColumns: ["x".repeat(70 * 1024)] });
+    expect(response.status).toBe(413);
+  });
+
   it("lets a viewer store their own layout", async () => {
     // Read-only about the shelf, not about how they look at it.
     const viewer = await asMember("viewer");

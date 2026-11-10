@@ -7,7 +7,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: postgresql://postgres:mysecretpassword@db:5432/asaph
+      # Built from the same variable as the `db` service, so the two can't drift.
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@db:5432/asaph
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       # Runtime, not build time — the image stays origin-agnostic either way.
       # Optional: without it the app still works (every auth path is a Server
@@ -20,6 +21,12 @@ services:
       # `false` closes registration. Compose reads this from `.env` (not
       # `.env.local`) or the shell; unset leaves signups open.
       ALLOW_SIGNUPS: ${ALLOW_SIGNUPS:-true}
+      # How sign-in attempt limits find the client's address behind a proxy or
+      # CDN. Unset is right when nothing sits in front of this container.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      # `true` makes the CSP report-only, for a CDN that injects scripts.
+      CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-}
       # Metadata lookups. Compose reads these from `.env` (not `.env.local`) or
       # the shell; leaving them unset is fine — collections whose provider has no
       # credentials just show no lookup panel. Open Library needs none.
@@ -46,10 +53,20 @@ services:
   db:
     image: postgres:18-alpine
     environment:
-      POSTGRES_PASSWORD: mysecretpassword
+      # The default is for local development only. Anywhere else, set
+      # POSTGRES_PASSWORD in `.env` *before* the first `up`: Postgres reads it
+      # only when the volume is first initialized, so changing it later needs an
+      # `ALTER USER` too (docs/self-hosting.md). Use URL-safe characters
+      # (`openssl rand -hex 32`), since it's also spliced into DATABASE_URL above.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
       POSTGRES_DB: asaph
+    # Loopback only, like mailpit below. The app reaches the database over the
+    # Compose network and needs no published port at all; this one is for
+    # `npm run dev`, migrations and tests on the same machine. A bare "5432:5432"
+    # binds every interface, and Docker's own iptables rules put it in front of
+    # ufw/firewalld, so on a server that would be the database on the internet.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     # Postgres 18+ images expect a mount at /var/lib/postgresql (not .../data) —
     # the entrypoint places versioned data in a subdirectory itself.
     volumes:

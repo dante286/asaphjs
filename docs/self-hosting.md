@@ -27,7 +27,7 @@ before the first start, and again after an upgrade whose release notes mention a
 
 ```bash
 docker run -d --name asaph -p 3000:3000 \
-  -e DATABASE_URL=postgresql://postgres:mysecretpassword@host.docker.internal:5432/asaph \
+  -e DATABASE_URL=postgresql://postgres:<db-password>@host.docker.internal:5432/asaph \
   -e BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
   -e BETTER_AUTH_URL=http://localhost:3000 \
   -v asaph-uploads:/app/uploads \
@@ -48,6 +48,31 @@ image. Without a volume they live in the container's writable layer and vanish w
 `docker run --rm` on an upgrade would take every cover photo with it. `UPLOADS_DIR` already
 points there in the image; override it only if you mount somewhere else.
 
+## Running with Compose
+
+`docker-compose.yml` runs the app and its Postgres together. It's what local development
+uses, and it works for a small instance too, with two things to know first.
+
+**Set `POSTGRES_PASSWORD` in `.env` before the first `docker compose up`.** Unset, the
+database uses the development default that's written in this repository. Compose builds the
+app's `DATABASE_URL` from the same variable, so set it once. Use URL-safe characters
+(`openssl rand -hex 32`), since it ends up inside a connection string.
+
+Postgres only reads that password when its volume is first created. To change it on an
+existing volume, change it inside the database too, then update `.env` and recreate the app:
+
+```bash
+docker compose exec db psql -U postgres -c "ALTER USER postgres PASSWORD '<new-password>'"
+docker compose up -d app
+```
+
+**The database is published on `127.0.0.1` only.** The app reaches it over the Compose
+network, and the loopback port is there for migrations, seeding and maintenance commands run
+on the same machine. To reach it from somewhere else, use an SSH tunnel
+(`ssh -L 5432:127.0.0.1:5432 <host>`) rather than publishing it more widely. Docker's own
+firewall rules take precedence over ufw and firewalld, so a port published on every
+interface is open to the internet whatever the host firewall says.
+
 ## Configuration
 
 All configuration is environment variables, read at runtime. [`.env.example`](https://github.com/dante286/asaphjs/blob/main/.env.example)
@@ -64,6 +89,9 @@ carries the same list with comments.
 | `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` | unset | Video game lookups. Register an app at [dev.twitch.tv/console](https://dev.twitch.tv/console). |
 | `TMDB_API_KEY` | unset | Movie, TV and anime lookups. Either credential from [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) works. |
 | `METADATA_USER_AGENT` | `AsaphJS/0.1` | Identifies the instance to Open Library, per its API etiquette. Put a contact address in it. |
+| `TRUSTED_PROXIES` | unset | Comma-separated IPs or CIDR ranges of your reverse proxies. Lets sign-in limits find the real client address. See [Sign-in attempt limits](#sign-in-attempt-limits). |
+| `CLIENT_IP_HEADER` | unset | A single-value header your CDN puts the client address in, such as `cf-connecting-ip`. Used instead of `X-Forwarded-For`. |
+| `CSP_REPORT_ONLY` | unset | `true` sends the Content-Security-Policy as report-only: violations are logged in the browser console, nothing is blocked. For a CDN that injects scripts. See [Security headers](#security-headers-behind-a-reverse-proxy). |
 
 Without the provider keys, collections of those types simply show no metadata panel. Open
 Library needs no key, so book, comic, manga and strategy guide lookups always work. See
@@ -113,6 +141,43 @@ It's per-deployment and runtime-only, so it costs the image none of its portabil
 Compose file sets it to `http://localhost:3000`; change that to your public origin, or reset
 emails will send people to localhost.
 
+## Sign-in attempt limits
+
+Signing in, signing up, password reset and the password checks on the account page are
+limited, with counts kept in the database so a restart doesn't reset them:
+
+| What | Limit |
+| --- | --- |
+| Sign-in attempts for one email address, from anywhere | 10 per 15 minutes, cleared by a successful sign-in |
+| Sign-in attempts from one client address | 50 per 15 minutes |
+| Sign-ups from one client address | 10 per hour |
+| Password reset requests, and new-password submissions, from one client address | 10 per 15 minutes each |
+| Change password or delete account from one client address | 10 per 15 minutes |
+| Confirmation emails | 1 a minute per account, and requests for one 10 per 15 minutes per client address |
+| Collection invite emails, when mail is configured | 20 a day per inviter, 5 a day per recipient address, 50 a day per client address |
+
+Past a limit, the form says *Too many attempts* and the attempt isn't checked at all. The
+per-address limit means someone can lock a person out of sign-in for 15 minutes by guessing
+wrong on purpose; that's the usual price of stopping password guessing, and the window is
+short.
+
+The per-client limits need the client's real address, which only your proxy knows:
+
+- **No proxy**, with the container published directly: nothing to set, but a client can then
+  claim any address in `X-Forwarded-For` and dodge the per-client limits. The per-address
+  limit still holds. A reverse proxy in front is the better setup.
+- **One reverse proxy** that *replaces* `X-Forwarded-For` (nginx:
+  `proxy_set_header X-Forwarded-For $remote_addr;`): nothing to set.
+- **A proxy that appends** to the header (nginx's `$proxy_add_x_forwarded_for`, Traefik)
+  or a chain of proxies: set `TRUSTED_PROXIES` to their addresses, for example the
+  Docker network's range (`172.16.0.0/12`).
+- **A CDN** (Cloudflare and the like): set `CLIENT_IP_HEADER` to the header it sends, such as
+  `cf-connecting-ip`.
+
+A request whose client address can't be worked out shares one limit with every other such
+request. That way, a forged header can't be used to get out of the limits. When it happens in
+production, the server logs a warning once.
+
 ## Closing registration
 
 `ALLOW_SIGNUPS=false` closes registration: the "Create account" segment disappears from
@@ -150,6 +215,49 @@ instance, someone you share a collection with needs a registration invite first.
 locked account is the operator. [Accounts and sign-in](design/accounts.md#password-reset-by-email)
 has the details, including the one-email-a-minute limit per address.
 
+## Security headers behind a reverse proxy
+
+Asaph sets its own security headers, so a reverse proxy doesn't need to add any:
+
+- **On every response:** `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: strict-origin-when-cross-origin` (`no-referrer` on share, invite,
+  join and password-reset pages, whose URLs carry tokens), a restrictive
+  `Permissions-Policy`, and `Cross-Origin-Opener-Policy: same-origin`.
+- **On every page:** a `Content-Security-Policy` with a fresh script nonce per request. Only
+  the app's own scripts run, nothing may frame the app, and images load only from the app
+  and the metadata providers' image hosts.
+- **When `BETTER_AUTH_URL` is https:** `Strict-Transport-Security: max-age=31536000` (no
+  `includeSubDomains` or `preload`, which only you can decide on for your domain), and
+  `upgrade-insecure-requests` in the CSP.
+
+A few things follow from the proxy terminating TLS:
+
+- **Set `BETTER_AUTH_URL` to your https origin.** The app sees plain http from the proxy, so
+  that variable is the only way it knows the browser is on https. Without it there's no HSTS
+  from the app. If your proxy sends its own HSTS, that's fine too: browsers use the first
+  header they get.
+- **Don't cache HTML pages at the proxy.** Each page's nonce is unique to its response, so a
+  cached page served to someone else would reference a nonce their response doesn't allow.
+  The app's pages are per-user anyway. Static assets under `/_next/static` are safe to cache.
+- **Don't add a second Content-Security-Policy at the proxy.** Browsers enforce every CSP they
+  receive, so a second one can only make the app's stricter.
+- **CDNs that inject scripts** (Cloudflare's Rocket Loader, email obfuscation, and similar)
+  are blocked by the policy, because their scripts carry no nonce. Turn those features off.
+  To find out what's being blocked first, set `CSP_REPORT_ONLY=true`: the browser console
+  then lists violations without blocking anything.
+
+## Confirming email addresses
+
+With mail and `BETTER_AUTH_URL` both set, a new account is emailed a confirmation link, and
+an account has to confirm its address before it can send invites, either to a collection
+or to register. Everything else works unconfirmed. Accounts created from an emailed
+registration invite start out confirmed, since opening that link already proved the address.
+
+**Existing accounts start unconfirmed.** After upgrading an instance that sends mail, people
+see a *Send confirmation email* button on their account page, and need it only when they
+next want to invite someone. Without mail, nothing is asked for: the instance couldn't
+deliver the link.
+
 ## Backups
 
 Two things hold an instance's data, and a backup needs both:
@@ -185,7 +293,8 @@ These run from a checkout pointed at the instance's database, not inside the con
 | --- | --- |
 | `database "<name>" does not exist` on migrate or seed | The database named in `DATABASE_URL` doesn't exist. A `DATABASE_URL` exported in your shell overrides `.env.local`. |
 | Cover photos gone after recreating the container | `/app/uploads` wasn't on a volume. |
-| `Base URL is not set` in the log at boot | `BETTER_AUTH_URL` is unset. Harmless, but set it. |
+| `Base URL is not set` in the log at boot | `BETTER_AUTH_URL` is unset. Set it: see the next row. |
+| `[config] BETTER_AUTH_URL …` warning at boot | It's unset, malformed, or plain http on a real host. Behind an https proxy, the app learns it's on https only from this variable: it decides Secure session cookies, HSTS, and the reset and confirmation links. Set it to your public https origin. |
 | `403 INVALID_ORIGIN` from `/api/auth/*` | Same cause. |
 | No "Forgot password?" link on `/auth` | Mail isn't configured, or `BETTER_AUTH_URL` is unset. Both are needed. |
 | Reset emails link to `localhost` | `BETTER_AUTH_URL` is still the Compose default. |
@@ -194,3 +303,8 @@ These run from a checkout pointed at the instance's database, not inside the con
 | No metadata panel on a collection | That template has no provider, or this instance has no key for it. Intentional. |
 | Mail appears in the log instead of being sent | `SMTP_HOST` or `EMAIL_FROM` is unset. |
 | Every user signed out after a restart | `BETTER_AUTH_SECRET` changed between starts. |
+| `password authentication failed for user "postgres"` after setting `POSTGRES_PASSWORD` | The database volume was created with the old password. See [Running with Compose](#running-with-compose). |
+| Pages render but buttons do nothing; the browser console shows "violates the following Content Security Policy" | Something between the app and the browser is injecting scripts or caching pages. See [Security headers](#security-headers-behind-a-reverse-proxy); `CSP_REPORT_ONLY=true` unblocks things while you find it. |
+| Everyone sees *Too many attempts* on sign-in | The server can't work out client addresses, so all requests share one limit. The log says so at the first one. Set `TRUSTED_PROXIES` or `CLIENT_IP_HEADER`; see [Sign-in attempt limits](#sign-in-attempt-limits). |
+| Invites refused with "Confirm your email address first" | Mail is configured, so the inviter's address has to be confirmed. The button is on their account page. See [Confirming email addresses](#confirming-email-addresses). |
+| Can't reach the Compose database from another machine | It's published on `127.0.0.1` only, by design. Use an SSH tunnel. |
