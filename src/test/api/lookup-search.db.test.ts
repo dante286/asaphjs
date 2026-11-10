@@ -24,9 +24,18 @@ vi.mock("next/headers", async () => {
  * anything it tests. The limiter's own behaviour is covered on fake timers in
  * src/lib/metadata/rate-limiter.test.ts.
  */
-vi.mock("@/lib/metadata/rate-limiter", () => ({
-  getLimiter: () => ({ schedule: <T>(task: () => Promise<T>) => task() }),
-}));
+const limiter = vi.hoisted(() => ({ full: false }));
+vi.mock("@/lib/metadata/rate-limiter", async () => {
+  const { LimiterBusyError } = await import("@/lib/metadata/limiter-busy");
+  return {
+    // `full` stands in for a queue at its bound, which the real limiter's own
+    // spec drives on fake timers.
+    getLimiter: (key: string) => ({
+      schedule: <T>(task: () => Promise<T>) =>
+        limiter.full ? Promise.reject(new LimiterBusyError(key)) : task(),
+    }),
+  };
+});
 
 const { GET } = await import("@/app/api/lookup/[provider]/search/route");
 
@@ -37,6 +46,7 @@ let user: TestUser;
 beforeEach(async () => {
   user = await createTestUser();
   signedInAs(user);
+  limiter.full = false;
 });
 
 function search(provider: string, q?: string) {
@@ -118,6 +128,30 @@ describe("the failure ladder, keyless", () => {
     providerServer.use(http.get(`${OPENLIBRARY_BASE_URL}/search.json`, () => HttpResponse.error()));
 
     expect((await search("openlibrary", "frieren")).status).toBe(502);
+  });
+});
+
+describe("limits", () => {
+  it("429s one person's searches past 30 a minute", async () => {
+    for (let i = 0; i < 30; i++) expect((await search("openlibrary", `query ${i}`)).status).toBe(200);
+
+    const response = await search("openlibrary", "one more");
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "That's a lot of lookups. Wait a minute and try again." });
+
+    // Someone else still gets theirs.
+    signedInAs(await createTestUser());
+    expect((await search("openlibrary", "frieren")).status).toBe(200);
+  });
+
+  it("503s with its own message when the provider's queue is full", async () => {
+    limiter.full = true;
+
+    const response = await search("openlibrary", "frieren");
+
+    // Not the 502 a broken provider gets: nothing is wrong with it, it's busy.
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Lookups are busy right now. Try again in a minute." });
   });
 });
 

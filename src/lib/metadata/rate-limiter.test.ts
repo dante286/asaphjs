@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LimiterBusyError } from "./limiter-busy";
 import { getLimiter } from "./rate-limiter";
 
 /**
@@ -104,6 +105,25 @@ describe("the token window", () => {
     vi.advanceTimersByTime(1000);
 
     await expect(after).resolves.toBe("done");
+  });
+
+  it("refuses at once past its queue bound, and frees room as the queue drains", async () => {
+    const limiter = getLimiter(nextKey(), 1, 1000, 2);
+    const task = vi.fn(async () => "done");
+
+    limiter.schedule(task); // takes the token
+    const first = limiter.schedule(task); // queued
+    const second = limiter.schedule(task); // queued: the queue is now full
+    await expect(limiter.schedule(task)).rejects.toBeInstanceOf(LimiterBusyError);
+
+    vi.advanceTimersByTime(1000);
+    await expect(first).resolves.toBe("done");
+    // One slot drained, so the next caller waits instead of being refused.
+    const third = limiter.schedule(task);
+    vi.advanceTimersByTime(1000);
+    await expect(second).resolves.toBe("done");
+    vi.advanceTimersByTime(1000);
+    await expect(third).resolves.toBe("done");
   });
 
   it("gives every key its own tokens", async () => {
