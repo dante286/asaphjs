@@ -13,6 +13,10 @@ import {
   VERIFICATION_TOKEN_TTL_SECONDS,
 } from "./email-verification";
 import { clientIp, ipAddressOptions, limitAuthAttempt, recordAuthSuccess } from "./rate-limit";
+import { servedOverHttps } from "@/lib/security-headers";
+import { logDeploymentWarnings } from "./deployment-warnings";
+
+logDeploymentWarnings();
 
 /**
  * Read once, at module evaluation, like the rest of this config: changing
@@ -182,6 +186,12 @@ export const auth = betterAuth({
     // Shared by Better Auth's own HTTP limiter and the attempt limits above,
     // so both agree on who a client is behind a proxy.
     ipAddress: ipAddressOptions(),
+    // From BETTER_AUTH_URL, the same answer the security headers use: behind a
+    // TLS-terminating proxy the request is plain http, so it can't be asked.
+    // Undefined (not false) otherwise, which leaves Better Auth's own fallback:
+    // Secure in production. `deploymentWarnings` tells the operator when that
+    // fallback is all there is.
+    useSecureCookies: servedOverHttps() ? true : undefined,
   },
   session: {
     expiresIn: 60 * 60 * 24 * 30, // 30 days

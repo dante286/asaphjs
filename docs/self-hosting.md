@@ -293,7 +293,8 @@ These run from a checkout pointed at the instance's database, not inside the con
 | --- | --- |
 | `database "<name>" does not exist` on migrate or seed | The database named in `DATABASE_URL` doesn't exist. A `DATABASE_URL` exported in your shell overrides `.env.local`. |
 | Cover photos gone after recreating the container | `/app/uploads` wasn't on a volume. |
-| `Base URL is not set` in the log at boot | `BETTER_AUTH_URL` is unset. Harmless, but set it. |
+| `Base URL is not set` in the log at boot | `BETTER_AUTH_URL` is unset. Set it: see the next row. |
+| `[config] BETTER_AUTH_URL …` warning at boot | It's unset, malformed, or plain http on a real host. Behind an https proxy, the app learns it's on https only from this variable: it decides Secure session cookies, HSTS, and the reset and confirmation links. Set it to your public https origin. |
 | `403 INVALID_ORIGIN` from `/api/auth/*` | Same cause. |
 | No "Forgot password?" link on `/auth` | Mail isn't configured, or `BETTER_AUTH_URL` is unset. Both are needed. |
 | Reset emails link to `localhost` | `BETTER_AUTH_URL` is still the Compose default. |
