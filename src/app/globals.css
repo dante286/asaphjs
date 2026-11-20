@@ -13,3 +13,22 @@ body {
 body {
   min-height: 100%;
 }
+
+/* Off screen but still focusable and announced; `hidden` would remove it from the tab order. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The CSV drop zone's focus ring, drawn on the zone for its visually hidden file input. */
+.csv-dropzone:has(input:focus-visible) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

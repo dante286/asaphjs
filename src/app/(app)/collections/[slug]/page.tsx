@@ -10,6 +10,7 @@ import { StatTiles } from "@/components/collection/StatTiles";
 import { BreakdownPanel } from "@/components/collection/BreakdownPanel";
 import { ItemsExplorer } from "@/components/collection/ItemsExplorer";
 import { resolveLookupConfig } from "@/lib/metadata/lookup-config";
+import { trackedFeatures } from "@/lib/collection-features";
 
 export default async function CollectionDetailPage({
   params,
@@ -30,6 +31,7 @@ export default async function CollectionDetailPage({
     getViewPreferences(session.user.id, collection.id),
   ]);
 
+  const tracked = trackedFeatures(collection.features);
   const breakdownField = pickBreakdownField(collection.fields);
   const breakdown = breakdownField ? await getBreakdown(collection.id, breakdownField) : [];
 
@@ -46,7 +48,7 @@ export default async function CollectionDetailPage({
   return (
     <div style={{ maxWidth: 1400, margin: "0 auto", padding: "clamp(18px,3vw,36px) clamp(14px,3vw,32px) 80px" }}>
       <CollectionHeader collection={collection} role={role} />
-      <StatTiles stats={stats} />
+      <StatTiles stats={stats} tracked={tracked} />
       {breakdownField && (
         <BreakdownPanel title={`Items per ${breakdownField.label.toLowerCase()}`} rows={breakdown} />
       )}
@@ -56,6 +58,7 @@ export default async function CollectionDetailPage({
         fields={collection.fields}
         canEdit={role === "owner" || role === "editor"}
         defaultView={(collection.defaultView as "covers" | "table") ?? "covers"}
+        tracked={tracked}
         initialData={initialItemsSerialized}
         initialViewPrefs={initialViewPrefs}
         // Resolved server-side: whether a provider is usable depends on env vars

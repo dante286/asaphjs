@@ -6,6 +6,7 @@ import {
   deleteItem,
   getItem,
   getItemNeighbors,
+  listAllItems,
   listItems,
   patchItem,
 } from "./items";
@@ -433,5 +434,19 @@ describe("getItemNeighbors", () => {
     const [first, middle, last] = [...copies].sort((x, y) => (x.id < y.id ? -1 : 1));
 
     expect(await getItemNeighbors(collectionId, middle.id)).toMatchObject({ prevId: first.id, nextId: last.id });
+  });
+});
+
+describe("listAllItems", () => {
+  it("returns the whole collection, past any page size, in list order", async () => {
+    // What the account export reads. It used to take one page of 10,000, so
+    // anything past that was missing from the file without a word.
+    for (let i = 0; i < 65; i++) await createItem({ collectionId, title: `Item ${String(i).padStart(2, "0")}` });
+
+    const rows = await listAllItems(collectionId);
+
+    expect(rows).toHaveLength(65);
+    expect(rows[0].title).toBe("Item 00");
+    expect(rows[64].title).toBe("Item 64");
   });
 });

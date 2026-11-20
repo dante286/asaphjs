@@ -200,6 +200,19 @@ export async function deleteItem(collectionId: string, itemId: string) {
   await releaseUploads(removed.map((row) => row.coverUrl));
 }
 
+/**
+ * Every item in a collection, in list order, with no page cap. For exports,
+ * which have to be complete: a page of 10,000 silently dropped the rest of a
+ * large collection, and the delete-account dialog tells people to export first.
+ */
+export async function listAllItems(collectionId: string) {
+  return db
+    .select()
+    .from(items)
+    .where(eq(items.collectionId, collectionId))
+    .orderBy(asc(items.sortTitle), asc(items.id));
+}
+
 export async function getItem(itemId: string) {
   return db.query.items.findFirst({ where: eq(items.id, itemId) });
 }

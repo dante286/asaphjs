@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { importBatches, items } from "@/db/schema";
 import type { ImportRowError } from "@/db/schema/import-batches";
 import type { FieldDef } from "@/lib/fields/field-def";
+import { toIsoDate } from "@/lib/fields/dates";
 import { isTitleField } from "@/lib/fields/item-values";
 import { releaseUploads } from "./uploads";
 import type { ImportMappings } from "@/types";
@@ -23,6 +24,10 @@ function coerceCsvValue(type: FieldDef["type"], raw: string): unknown {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
+    case "date":
+      // Stored as `YYYY-MM-DD`, the only form a date input shows. A spelling
+      // toIsoDate doesn't know is kept as written rather than lost.
+      return toIsoDate(trimmed) ?? trimmed;
     default:
       return trimmed;
   }

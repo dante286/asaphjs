@@ -1,10 +1,16 @@
 import Link from "next/link";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { timeAgo } from "@/lib/format";
+import { trackedFeatures } from "@/lib/collection-features";
 import type { CollectionCardRow } from "@/db/queries/collections";
 
 export function CollectionCard({ row }: { row: CollectionCardRow }) {
-  const { collection, itemCount, verifiedCount, lentCount, isOwner, ownerName } = row;
+  const { collection, itemCount, isOwner, ownerName } = row;
+  // A collection that doesn't track one of these shows neither its bar
+  // segment nor its fact line.
+  const tracked = trackedFeatures(collection.features);
+  const verifiedCount = tracked.verified ? row.verifiedCount : 0;
+  const lentCount = tracked.lending ? row.lentCount : 0;
   const unverified = Math.max(itemCount - verifiedCount - lentCount, 0);
   const segments = [
     { color: "var(--color-accent-700)", count: verifiedCount },
@@ -13,7 +19,7 @@ export function CollectionCard({ row }: { row: CollectionCardRow }) {
   ].filter((s) => s.count > 0);
 
   const facts: string[] = [];
-  if (itemCount > 0) facts.push(`${verifiedCount} verified`);
+  if (itemCount > 0 && tracked.verified) facts.push(`${verifiedCount} verified`);
   if (lentCount > 0) facts.push(`${lentCount} lent out`);
   facts.push(`${collection.fields.length} fields`);
 

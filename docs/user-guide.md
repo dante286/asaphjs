@@ -44,7 +44,8 @@ From the dashboard, start a new collection in one of three ways:
 
 The name follows the template you pick, and you can change it. You can also choose whether
 the collection opens in table view, and whether it tracks lending (who has borrowed an item)
-and whether a copy is verified.
+and whether a copy is verified. Turning either off hides its checkbox or "Lent to" field,
+its filter, and its count everywhere the collection appears.
 
 **A collection keeps its own copy of the fields.** Changing your fields later never touches
 another collection, and a later change to a built-in template never reshapes a collection you

@@ -4,6 +4,7 @@ import { listItems, stripItemsForPublic } from "@/db/queries/items";
 import { PublicItemsList } from "@/components/collection/PublicItemsList";
 import { toClientItem } from "@/lib/api/items-client";
 import { Tag } from "@/components/ui/Tag";
+import { trackedFeatures } from "@/lib/collection-features";
 
 export const metadata = {
   robots: { index: false, follow: false },
@@ -48,6 +49,7 @@ export default async function PublicSharePage({ params }: { params: Promise<{ to
           fields={publicFields}
           defaultView={collection.defaultView === "table" ? "table" : "covers"}
           initialData={initialData}
+          tracked={trackedFeatures(collection.features)}
         />
       </div>
     </div>

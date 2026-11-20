@@ -115,6 +115,24 @@ describe("commitImport", () => {
     expect(item.values.copies).toBeNull();
   });
 
+  it("stores a date as YYYY-MM-DD, and keeps a spelling it can't read as written", async () => {
+    // A date input only shows ISO dates; "03/14/2021" stored as typed rendered blank.
+    const fields: FieldDef[] = [...FIELDS, { id: "released", label: "Released", type: "date", order: 8, origin: "csv" }];
+    await commitImport({
+      collectionId,
+      fields,
+      mapping: { Title: "title", Released: "released" },
+      rows: [
+        { Title: "Chrono Trigger", Released: "03/11/1995" },
+        { Title: "Earthbound", Released: "sometime in 1994" },
+      ],
+    });
+
+    const rows = (await listItems({ collectionId })).rows;
+    expect(rows.find((r) => r.title === "Chrono Trigger")?.values.released).toBe("1995-03-11");
+    expect(rows.find((r) => r.title === "Earthbound")?.values.released).toBe("sometime in 1994");
+  });
+
   it("reads an empty cell as unset for every type", async () => {
     await commit([{ Title: "Chrono Trigger", Console: "   ", Copies: "", Genre: "", Boxed: "" }]);
 

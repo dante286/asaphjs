@@ -193,6 +193,40 @@ describe("signUpAction", () => {
       .toMatchObject({ name: "New Arrival" });
   });
 
+  it("lands on `next` when it's given one, so an invite link survives sign-up", async () => {
+    const digest = await redirectFrom(
+      actions.signUpAction(
+        undefined,
+        form({
+          email: "invited-newcomer@asaph.test",
+          password: "a-long-enough-password",
+          confirmPassword: "a-long-enough-password",
+          displayName: "Invited",
+          next: "/invite/some-token",
+        }),
+      ),
+    );
+
+    expect(digest).toBe("NEXT_REDIRECT;replace;/invite/some-token;307;");
+  });
+
+  it("won't follow a `next` that leaves the site", async () => {
+    const digest = await redirectFrom(
+      actions.signUpAction(
+        undefined,
+        form({
+          email: "phished@asaph.test",
+          password: "a-long-enough-password",
+          confirmPassword: "a-long-enough-password",
+          displayName: "Phished",
+          next: "//elsewhere.example/login",
+        }),
+      ),
+    );
+
+    expect(digest).toBe("NEXT_REDIRECT;replace;/;307;");
+  });
+
   it("catches a confirm-password mismatch before writing anything", async () => {
     const result = await actions.signUpAction(
       undefined,

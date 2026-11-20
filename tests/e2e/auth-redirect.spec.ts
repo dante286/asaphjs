@@ -25,6 +25,14 @@ for (const pathname of PROTECTED) {
   });
 }
 
+test("the query string rides along in ?next=", async ({ page }) => {
+  // A verification link opened signed out lands on /account?verified=1; the
+  // card that confirms it reads that flag after sign-in.
+  await page.goto("/account?verified=1");
+
+  await expect(page).toHaveURL(`/auth?next=${encodeURIComponent("/account?verified=1")}`);
+});
+
 test("a path off the signed-in-only list is served without a session", async ({ page }) => {
   // The counterpart assertion, and the reason the redirect covers a list rather than
   // everything: /s/:token has to stay reachable signed out or the share links

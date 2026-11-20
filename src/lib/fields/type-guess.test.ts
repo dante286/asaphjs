@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guessColumnType, guessFieldsFromRows } from "./type-guess";
+import { guessColumnType, guessFieldsFromRows, MAX_SELECT_OPTIONS } from "./type-guess";
 
 /** n copies of the given values, for the sample-count thresholds. */
 function repeat(values: string[], times: number): string[] {
@@ -22,6 +22,15 @@ describe("guessColumnType: check ordering", () => {
     // column would become a date picker if numeric didn't run first.
     expect(guessColumnType(["5", "7", "9"])).toBe("number");
     expect(guessColumnType(["1994", "1995", "2001"])).toBe("number");
+  });
+
+  it("doesn't call titles that end in a number dates", () => {
+    // V8's Date.parse reads all of these as dates.
+    expect(guessColumnType(["Halo 2", "Volume 3", "Disc 1"])).toBe("text");
+  });
+
+  it("calls a US-style date column a date", () => {
+    expect(guessColumnType(["03/14/2021", "12/01/1999"])).toBe("date");
   });
 
   it("still calls an ISO-date column a date", () => {
@@ -152,6 +161,26 @@ describe("guessFieldsFromRows", () => {
     expect(condition.type).toBe("select");
     expect(condition.options).toEqual(["Mint", "Good"]);
     expect(title.options).toBeUndefined();
+  });
+
+  it("takes a select's options from every row, not just the sample", () => {
+    // A value first seen on row 61 has to be an option, or its <select> renders blank.
+    const rows = repeat(["Mint", "Good"], 30)
+      .map((condition, i) => ({ Title: `Item ${i}`, Condition: condition }))
+      .concat({ Title: "Late", Condition: "Poor" });
+
+    const [, condition] = guessFieldsFromRows(["Title", "Condition"], rows);
+
+    expect(condition.type).toBe("select");
+    expect(condition.options).toEqual(["Mint", "Good", "Poor"]);
+  });
+
+  it("falls back to text when the whole file has too many distinct values for a dropdown", () => {
+    const rows = repeat(["Mint", "Good"], 30)
+      .map((condition, i) => ({ Title: `Item ${i}`, Condition: condition }))
+      .concat(Array.from({ length: MAX_SELECT_OPTIONS }, (_, i) => ({ Title: `Late ${i}`, Condition: `Grade ${i}` })));
+
+    expect(guessFieldsFromRows(["Title", "Condition"], rows)[1]).toMatchObject({ type: "text", options: undefined });
   });
 
   it("hides long text from the table view", () => {

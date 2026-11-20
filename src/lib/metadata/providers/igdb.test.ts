@@ -244,6 +244,38 @@ describe("the Twitch app token", () => {
     );
   });
 
+  it("drops a token IGDB rejects and retries once with a fresh one", async () => {
+    // A rotated secret or revoked token used to fail every lookup for the
+    // token's ~60-day life, because the cache never let it go.
+    await igdb.igdbProvider.search("chrono trigger");
+    let rejected = 0;
+    server.use(
+      http.post(IGDB_GAMES_URL, () => {
+        rejected++;
+        return new HttpResponse(null, { status: 401 });
+      }, { once: true }),
+    );
+
+    await igdb.igdbProvider.search("chrono trigger");
+
+    expect(rejected).toBe(1);
+    expect(await requestsTo("id.twitch.tv")).toHaveLength(2);
+    expect(await requestsTo("api.igdb.com")).toHaveLength(3);
+  });
+
+  it("doesn't retry more than once", async () => {
+    server.use(http.post(IGDB_GAMES_URL, () => new HttpResponse(null, { status: 401 })));
+
+    await expect(igdb.igdbProvider.search("chrono trigger")).rejects.toThrow("IGDB games failed: 401");
+    expect(await requestsTo("api.igdb.com")).toHaveLength(2);
+  });
+
+  it("shares one token request between concurrent queries", async () => {
+    await Promise.all([igdb.igdbProvider.search("chrono trigger"), igdb.igdbProvider.hydrate("1017")]);
+
+    expect(await requestsTo("id.twitch.tv")).toHaveLength(1);
+  });
+
   it("surfaces a failed query with its status", async () => {
     server.use(http.post(IGDB_GAMES_URL, () => new HttpResponse(null, { status: 500 })));
 

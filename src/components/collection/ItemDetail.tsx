@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { Tag } from "@/components/ui/Tag";
 import { FieldCell } from "@/components/collection/FieldCell";
@@ -9,11 +10,13 @@ import { CoverPhoto } from "@/components/collection/CoverPhoto";
 import { MetadataLookupPanel } from "@/components/collection/MetadataLookupPanel";
 import { SaveStatusIndicator, type SaveStatus } from "@/components/collection/SaveStatusIndicator";
 import { ConflictError, deleteItemRequest, patchItemRequest, type Item } from "@/lib/api/items-client";
+import { markItemsStale } from "@/lib/api/items-cache";
 import { isTitleField, isFixedColumnField, getFieldValue, buildPatchForField } from "@/lib/fields/item-values";
 import type { ItemPatch, ItemNeighbors } from "@/db/queries/items";
 import type { collections } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
 import type { LookupConfig } from "@/lib/metadata/lookup-config";
+import { trackedFeatures } from "@/lib/collection-features";
 
 const DEBOUNCED_TYPES = new Set(["text", "longtext", "number", "url", "currency", "tags"]);
 const DEBOUNCE_MS = 400;
@@ -41,6 +44,7 @@ export function ItemDetail({
   lookup: LookupConfig | null;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [item, setItem] = useState(initialItem);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "idle" });
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -48,6 +52,7 @@ export function ItemDetail({
   // Viewers get no lookup panel — matching is an edit.
   const showLookupPanel = canEdit ? lookup : null;
   const fields = collection.fields;
+  const tracked = trackedFeatures(collection.features);
   const detailFields = fields
     .map((field, index) => ({ field, index }))
     .filter(({ field, index }) => !isTitleField(index) && !isFixedColumnField(field.id));
@@ -57,7 +62,7 @@ export function ItemDetail({
     .filter(({ field, index }) => field.type === "checkbox" && !isTitleField(index) && !isFixedColumnField(field.id))
     .filter(({ field, index }) => Boolean(getFieldValue(item, field, index)))
     .map(({ field }) => field.label)
-    .concat(item.verified ? ["Verified"] : [])
+    .concat(tracked.verified && item.verified ? ["Verified"] : [])
     .slice(0, 3);
 
   const subtitle = detailFields
@@ -77,9 +82,22 @@ export function ItemDetail({
   // first and get a 409.
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
 
+  // The inputs below are uncontrolled, so they only show a value that changed
+  // outside them (a lookup match, the server's copy after a 409) once
+  // they remount. This is their key. It isn't bumped for our own saves, which
+  // would remount an input mid-typing and drop its focus.
+  const [formKey, setFormKey] = useState(0);
+
+  function acceptExternalItem(updated: Item) {
+    acceptServerItem(updated);
+    setFormKey((k) => k + 1);
+  }
+
   function acceptServerItem(updated: Item) {
     latestUpdatedAt.current = updated.updatedAt;
     setItem(updated);
+    // The collection view's cached list still has the old row.
+    void markItemsStale(queryClient, collection.id);
   }
 
   function commit(patch: ItemPatch, debounceKey?: string) {
@@ -92,7 +110,7 @@ export function ItemDetail({
             setSaveStatus({ kind: "saved", at: new Date() });
           })
           .catch((err) => {
-            if (err instanceof ConflictError) acceptServerItem(err.current);
+            if (err instanceof ConflictError) acceptExternalItem(err.current);
             setSaveStatus({ kind: "error" });
           }),
       );
@@ -123,6 +141,8 @@ export function ItemDetail({
   async function handleDelete() {
     if (!window.confirm(`Delete "${item.title}"? This can't be undone.`)) return;
     await deleteItemRequest(collection.id, item.id);
+    // Or the list we're going back to shows the deleted row for up to 30s.
+    await markItemsStale(queryClient, collection.id);
     router.push(`/collections/${collection.slug}`);
   }
 
@@ -167,7 +187,7 @@ export function ItemDetail({
             item={item}
             canEdit={canEdit}
             plate={PLATES[neighbors.position % PLATES.length]}
-            onItemUpdate={acceptServerItem}
+            onItemUpdate={acceptExternalItem}
             onStatusChange={setSaveStatus}
           />
 
@@ -177,45 +197,53 @@ export function ItemDetail({
               item={item}
               lookup={showLookupPanel}
               canEdit={canEdit}
-              onItemUpdate={acceptServerItem}
+              onItemUpdate={acceptExternalItem}
               onStatusChange={setSaveStatus}
             />
           )}
 
-          <Blueprint style={{ padding: "12px 14px", display: "grid", gap: 10, fontSize: 12.5 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: canEdit ? "pointer" : "default" }}>
-              <input
-                type="checkbox"
-                defaultChecked={item.verified}
-                disabled={!canEdit}
-                onChange={(e) => {
-                  commit({ verified: e.target.checked });
-                  setItem((prev) => ({ ...prev, verified: e.target.checked }));
-                }}
-                style={{ accentColor: "var(--color-accent)", width: 16, height: 16 }}
-              />
-              Verified — physically confirmed
-            </label>
-            <div className="field" style={{ gap: 4 }}>
-              <label style={{ fontSize: 10.5 }}>Lent to</label>
-              <input
-                className="input"
-                type="text"
-                defaultValue={item.borrower ?? ""}
-                placeholder="Nobody — in your possession"
-                disabled={!canEdit}
-                onChange={(e) => {
-                  const value = e.target.value || null;
-                  commit({ borrower: value }, "borrower");
-                  setItem((prev) => ({ ...prev, borrower: value }));
-                }}
-                style={{ height: 32 }}
-              />
-            </div>
-            <div style={{ color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
-              {item.borrower ? "Lent out — reminder set for 30 days" : "Fill this in when you lend it out."}
-            </div>
-          </Blueprint>
+          {(tracked.verified || tracked.lending) && (
+            <Blueprint key={formKey} style={{ padding: "12px 14px", display: "grid", gap: 10, fontSize: 12.5 }}>
+              {tracked.verified && (
+                <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: canEdit ? "pointer" : "default" }}>
+                  <input
+                    type="checkbox"
+                    defaultChecked={item.verified}
+                    disabled={!canEdit}
+                    onChange={(e) => {
+                      commit({ verified: e.target.checked });
+                      setItem((prev) => ({ ...prev, verified: e.target.checked }));
+                    }}
+                    style={{ accentColor: "var(--color-accent)", width: 16, height: 16 }}
+                  />
+                  Verified — physically confirmed
+                </label>
+              )}
+              {tracked.lending && (
+                <>
+                  <div className="field" style={{ gap: 4 }}>
+                    <label style={{ fontSize: 10.5 }}>Lent to</label>
+                    <input
+                      className="input"
+                      type="text"
+                      defaultValue={item.borrower ?? ""}
+                      placeholder="Nobody — in your possession"
+                      disabled={!canEdit}
+                      onChange={(e) => {
+                        const value = e.target.value || null;
+                        commit({ borrower: value }, "borrower");
+                        setItem((prev) => ({ ...prev, borrower: value }));
+                      }}
+                      style={{ height: 32 }}
+                    />
+                  </div>
+                  <div style={{ color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
+                    {item.borrower ? "Lent out." : "Fill this in when you lend it out."}
+                  </div>
+                </>
+              )}
+            </Blueprint>
+          )}
 
           {/* The lookup panel above carries the match provenance when it renders;
               this line covers the cases where it doesn't (viewer, or a collection
@@ -238,6 +266,7 @@ export function ItemDetail({
               ))}
             </div>
             <input
+              key={formKey}
               type="text"
               defaultValue={item.title}
               disabled={!canEdit}
@@ -266,7 +295,7 @@ export function ItemDetail({
           {detailFields.length > 0 && (
             <div>
               <h6 style={{ marginBottom: 10 }}>Details</h6>
-              <Blueprint style={{ padding: "4px 18px 14px" }}>
+              <Blueprint key={formKey} style={{ padding: "4px 18px 14px" }}>
                 <div style={{ display: "grid", gap: 1 }}>
                   {detailFields.map(({ field, index }) => (
                     <div
@@ -300,6 +329,7 @@ export function ItemDetail({
           <div>
             <h6 style={{ marginBottom: 10 }}>Notes</h6>
             <textarea
+              key={formKey}
               className="input"
               defaultValue={item.notes ?? ""}
               disabled={!canEdit}

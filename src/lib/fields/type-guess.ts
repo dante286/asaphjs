@@ -1,3 +1,4 @@
+import { toIsoDate } from "./dates";
 import { slugifyFieldLabel, type FieldDef, type FieldType } from "./field-def";
 
 const BOOLISH = new Set(["y", "n", "yes", "no", "true", "false", "1", "0"]);
@@ -10,10 +11,9 @@ function looksNumeric(v: string): boolean {
   return v.trim() !== "" && !Number.isNaN(Number(v.trim()));
 }
 
+// Not `Date.parse`: see dates.ts for the titles it mistakes for dates.
 function looksDate(v: string): boolean {
-  if (isBlank(v)) return false;
-  const t = Date.parse(v.trim());
-  return !Number.isNaN(t);
+  return toIsoDate(v) !== null;
 }
 
 function looksBoolean(v: string): boolean {
@@ -39,24 +39,37 @@ export function guessColumnType(samples: string[]): FieldType {
   return longish ? "longtext" : "text";
 }
 
+/** Past this many distinct values a dropdown stops being useful; the column is text. */
+export const MAX_SELECT_OPTIONS = 50;
+
+/**
+ * Type and, for a select, its options. The type is guessed from the first
+ * `sampleSize` values, but a select's options come from all of them: a value
+ * that first shows up on row 120 has to be an option, or its `<select>`
+ * renders blank.
+ */
+export function guessColumn(values: string[], sampleSize = 50): { type: FieldType; options?: string[] } {
+  const type = guessColumnType(values.slice(0, sampleSize));
+  if (type !== "select") return { type };
+
+  const options = Array.from(new Set(values.map((v) => v.trim()).filter((v) => v !== "")));
+  return options.length > MAX_SELECT_OPTIONS ? { type: "text" } : { type, options };
+}
+
 export function guessFieldsFromRows(
   headers: string[],
   rows: Record<string, string>[],
   sampleSize = 50,
 ): FieldDef[] {
-  const sample = rows.slice(0, sampleSize);
   const usedIds = new Set<string>();
 
   return headers.map((header, index) => {
-    const samples = sample.map((r) => r[header] ?? "");
-    const type = index === 0 ? "text" : guessColumnType(samples);
+    const { type, options } =
+      index === 0 ? { type: "text" as const, options: undefined } : guessColumn(rows.map((r) => r[header] ?? ""), sampleSize);
 
     let id = slugifyFieldLabel(header);
     while (usedIds.has(id)) id = `${id}_2`;
     usedIds.add(id);
-
-    const distinctValues =
-      type === "select" ? Array.from(new Set(samples.filter((s) => !isBlank(s)))) : undefined;
 
     return {
       id,
@@ -65,7 +78,7 @@ export function guessFieldsFromRows(
       order: index,
       origin: "csv",
       showInTable: type !== "longtext" && type !== "image",
-      options: distinctValues,
+      options,
     } satisfies FieldDef;
   });
 }
