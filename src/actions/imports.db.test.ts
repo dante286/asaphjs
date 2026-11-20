@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getCollectionById, getCollectionForUser } from "@/db/queries/collections";
+import { getCollectionById, getCollectionForUser, updateCollectionFields } from "@/db/queries/collections";
 import { listItems } from "@/db/queries/items";
 import { acceptInvite, inviteMember } from "@/db/queries/members";
 import { aCollection, createTestUser, type TestUser } from "@/test/db/fixtures";
@@ -215,6 +215,29 @@ describe("importCsvIntoCollectionAction", () => {
     expect(collection?.fields).toEqual(withRegion);
     expect(collection?.importMappings).toEqual({ ...MAPPING, Region: "region" });
     expect((await listItems({ collectionId })).rows[0].values).toMatchObject({ region: "NTSC" });
+  });
+
+  it("adds its new fields to the collection's current list, not the one the page loaded", async () => {
+    // Someone renamed a field and added another while the wizard was open.
+    const current: FieldDef[] = [
+      FIELDS[0],
+      { ...FIELDS[1], label: "Platform" },
+      FIELDS[2],
+      { id: "rating", label: "Rating", type: "number", order: 3, origin: "csv" },
+    ];
+    await updateCollectionFields(collectionId, current);
+
+    await actions.importCsvIntoCollectionAction({
+      collectionId,
+      fields: [...FIELDS, { id: "region", label: "Region", type: "text", order: 3, origin: "csv" }],
+      mapping: { ...MAPPING, Region: "region" },
+      csv: csvOf([{ Title: "Chrono Trigger", Region: "NTSC" }]),
+    });
+
+    expect((await getCollectionById(collectionId))?.fields).toEqual([
+      ...current,
+      { id: "region", label: "Region", type: "text", order: 4, origin: "csv" },
+    ]);
   });
 
   it("reports a bad row rather than failing the file", async () => {

@@ -89,7 +89,14 @@ export function ItemsExplorer({
 
   const viewPrefsMutation = useMutation({
     mutationFn: (patch: Parameters<typeof saveViewPrefs>[1]) => saveViewPrefs(collectionId, patch),
+    // In order, so a reset sent after a resize lands after it rather than
+    // racing it and being overwritten.
+    scope: { id: `view-prefs:${collectionId}` },
+    onMutate: () => setSaveStatus({ kind: "saving" }),
+    onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }),
+    onError: () => setSaveStatus({ kind: "error" }),
   });
+  const saveViewPref = viewPrefsMutation.mutate;
 
   function openItem(item: Item) {
     router.push(`/collections/${collectionSlug}/items/${item.id}`);
@@ -100,11 +107,7 @@ export function ItemsExplorer({
   }
 
   function handleResizeColumnEnd(fieldId: string, width: number) {
-    setSaveStatus({ kind: "saving" });
-    viewPrefsMutation.mutate(
-      { columnWidths: { [fieldId]: width } },
-      { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
-    );
+    saveViewPref({ columnWidths: { [fieldId]: width } });
   }
 
   function handleAutoFitColumn(fieldId: string) {
@@ -113,41 +116,27 @@ export function ItemsExplorer({
       delete next[fieldId];
       return next;
     });
-    setSaveStatus({ kind: "saving" });
-    viewPrefsMutation.mutate(
-      { columnWidths: { [fieldId]: null } },
-      { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
-    );
+    saveViewPref({ columnWidths: { [fieldId]: null } });
   }
 
   function handleToggleColumn(fieldId: string) {
-    setHiddenColumns((prev) => {
-      const next = prev.includes(fieldId) ? prev.filter((id) => id !== fieldId) : prev.concat(fieldId);
-      viewPrefsMutation.mutate(
-        { hiddenColumns: next },
-        { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
-      );
-      return next;
-    });
-    setSaveStatus({ kind: "saving" });
+    // Worked out here, not inside a setState updater: React may call an
+    // updater twice (StrictMode, a replayed render), which sent the save twice.
+    const next = hiddenColumns.includes(fieldId)
+      ? hiddenColumns.filter((id) => id !== fieldId)
+      : hiddenColumns.concat(fieldId);
+    setHiddenColumns(next);
+    saveViewPref({ hiddenColumns: next });
   }
 
   function handleShowAllColumns() {
     setHiddenColumns([]);
-    setSaveStatus({ kind: "saving" });
-    viewPrefsMutation.mutate(
-      { hiddenColumns: [] },
-      { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
-    );
+    saveViewPref({ hiddenColumns: [] });
   }
 
   function handleResetWidths() {
     setColumnWidths({});
-    setSaveStatus({ kind: "saving" });
-    viewPrefsMutation.mutate(
-      { resetColumnWidths: true },
-      { onSuccess: () => setSaveStatus({ kind: "saved", at: new Date() }) },
-    );
+    saveViewPref({ resetColumnWidths: true });
   }
 
   const queryKey = ["items", collectionId, { q, verifiedOnly, lentOnly }] as const;
@@ -234,8 +223,10 @@ export function ItemsExplorer({
       queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) => removeRow(old, item.id));
       return { previous };
     },
-    onError: (_err, _item, context) => {
+    onError: (_err, item, context) => {
       if (context?.previous) queryClient.setQueryData(queryKey, context.previous);
+      // The row reappearing on its own would read as a glitch, not a failure.
+      window.alert(`Couldn't delete "${item.title}". Try again.`);
     },
     // Paging is by offset, so a delete moves every later row up a slot. The
     // row that was first on the next page is now last on this one, and asking
@@ -346,7 +337,11 @@ export function ItemsExplorer({
           columnWidths={columnWidths}
           hiddenColumns={hiddenColumns}
           onFieldChange={handleFieldChange}
-          onDelete={(item) => deleteMutation.mutate(item)}
+          onDelete={(item) => {
+            // Same question the item page asks — one stray click here used to
+            // delete the row outright.
+            if (window.confirm(`Delete "${item.title}"? This can't be undone.`)) deleteMutation.mutate(item);
+          }}
           onOpenItem={openItem}
           onResizeColumn={handleResizeColumn}
           onResizeColumnEnd={handleResizeColumnEnd}

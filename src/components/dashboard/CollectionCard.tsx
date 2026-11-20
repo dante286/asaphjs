@@ -11,9 +11,13 @@ export function CollectionCard({ row }: { row: CollectionCardRow }) {
   const tracked = trackedFeatures(collection.features);
   const verifiedCount = tracked.verified ? row.verifiedCount : 0;
   const lentCount = tracked.lending ? row.lentCount : 0;
-  const unverified = Math.max(itemCount - verifiedCount - lentCount, 0);
+  // The bar's segments must not overlap, and an item can be both verified and
+  // lent. It goes in the lent segment, so the verified one is only what's
+  // verified and on the shelf.
+  const verifiedInHand = verifiedCount - (tracked.verified && tracked.lending ? row.verifiedLentCount : 0);
+  const unverified = Math.max(itemCount - verifiedInHand - lentCount, 0);
   const segments = [
-    { color: "var(--color-accent-700)", count: verifiedCount },
+    { color: "var(--color-accent-700)", count: verifiedInHand },
     { color: "var(--color-accent-300)", count: lentCount },
     { color: "var(--color-neutral-300)", count: unverified },
   ].filter((s) => s.count > 0);

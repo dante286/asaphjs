@@ -12,6 +12,8 @@ export type CollectionCardRow = {
   itemCount: number;
   verifiedCount: number;
   lentCount: number;
+  /** Items that are both verified and lent out — counted in both of the above. */
+  verifiedLentCount: number;
 };
 
 /**
@@ -35,6 +37,7 @@ export async function listCollectionsForUser(userId: string): Promise<Collection
       itemCount: sql<number>`count(${items.id})::int`,
       verifiedCount: sql<number>`count(*) filter (where ${items.verified})::int`,
       lentCount: sql<number>`count(*) filter (where ${items.borrower} is not null)::int`,
+      verifiedLentCount: sql<number>`count(*) filter (where ${items.verified} and ${items.borrower} is not null)::int`,
     })
     .from(collections)
     .innerJoin(user, eq(user.id, collections.ownerId))
@@ -336,12 +339,21 @@ export async function updateCollectionSettings(
 export async function deleteCollection(id: string) {
   // Items go with the collection via `on delete cascade`, which the app never
   // sees row by row — so their covers have to be read before the rows vanish.
-  const covers = await db
-    .select({ coverUrl: items.coverUrl })
-    .from(items)
-    .where(eq(items.collectionId, id));
+  // Read in the same transaction, with the collection and its items locked, so
+  // an item created or re-covered in between can't slip past the read: an
+  // insert waits on the collection's lock (its foreign-key check), and a cover
+  // change waits on the item's.
+  const covers = await db.transaction(async (tx) => {
+    await tx.select({ id: collections.id }).from(collections).where(eq(collections.id, id)).for("update");
+    const rows = await tx
+      .select({ coverUrl: items.coverUrl })
+      .from(items)
+      .where(eq(items.collectionId, id))
+      .for("update");
+    await tx.delete(collections).where(eq(collections.id, id));
+    return rows;
+  });
 
-  await db.delete(collections).where(eq(collections.id, id));
   await releaseUploads(covers.map((row) => row.coverUrl));
 }
 

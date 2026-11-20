@@ -63,17 +63,23 @@ async function applyHydrated(
   const mirrored = plan.patch.coverUrl ? await mirrorCover(plan.patch.coverUrl) : null;
   if (mirrored) plan.patch.coverUrl = mirrored;
 
-  const result = await patchItem(
-    collectionId,
-    itemId,
-    {
-      ...plan.patch,
-      // Provenance for the detail page's "matched from" line, and what re-run
-      // reads back so the owner never has to re-pick the same game.
-      externalRef: { source: lookup.key, id: sourceId, fetchedAt: new Date().toISOString() },
-    },
-    opts.ifMatchUpdatedAt,
-  );
+  let result: Awaited<ReturnType<typeof patchItem>>;
+  try {
+    result = await patchItem(
+      collectionId,
+      itemId,
+      {
+        ...plan.patch,
+        // Provenance for the detail page's "matched from" line, and what re-run
+        // reads back so the owner never has to re-pick the same game.
+        externalRef: { source: lookup.key, id: sourceId, fetchedAt: new Date().toISOString() },
+      },
+      opts.ifMatchUpdatedAt,
+    );
+  } catch (err) {
+    if (mirrored) await deleteUpload(mirrored);
+    throw err;
+  }
 
   if (!result.ok) {
     // Don't leave mirrored bytes on disk for a row we didn't end up updating.
@@ -82,9 +88,11 @@ async function applyHydrated(
     throw new Error("Item not found.");
   }
 
-  // No-op unless the cover we replaced was itself stored locally — an uploaded
-  // photo or an earlier mirror. Provider URLs are left alone.
-  if (mirrored) await releaseUploads([item.coverUrl]);
+  // Whenever the cover changed — mirrored or not. A mirror that failed (a
+  // timeout, a host we don't fetch from) still swaps the row to the provider's
+  // URL, and the uploaded photo it replaced must go with it. No-op unless that
+  // cover was itself stored locally; provider URLs are left alone.
+  if (plan.patch.coverUrl) await releaseUploads([result.previousCoverUrl]);
 
   return { item: toClientItem(result.item), applied: plan.applied, keptExisting: plan.keptExisting };
 }

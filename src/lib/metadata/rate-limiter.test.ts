@@ -18,7 +18,7 @@ const nextKey = () => `test-limiter-${++keys}`;
 /** Resolves after the microtasks a settled `schedule` has queued behind it. */
 const flush = () => Promise.resolve();
 
-describe("the token window", () => {
+describe("the sliding window", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -68,6 +68,30 @@ describe("the token window", () => {
     vi.advanceTimersByTime(1000);
     await expect(all).resolves.toHaveLength(5);
     expect(task).toHaveBeenCalledTimes(5);
+  });
+
+  it("never lets a full burst at the end of one window meet another at the start of the next", async () => {
+    // A fixed window refilled all at once let 2× the capacity out within a few
+    // milliseconds of each other, which IGDB answers with a 429.
+    const limiter = getLimiter(nextKey(), 4, 1000);
+    const startedAt: number[] = [];
+    const task = async () => void startedAt.push(Date.now());
+
+    vi.advanceTimersByTime(900);
+    const all = Promise.all(Array.from({ length: 8 }, () => limiter.schedule(task)));
+    await flush();
+    expect(startedAt).toHaveLength(4);
+
+    // 100ms later is where a fixed window would have refilled.
+    vi.advanceTimersByTime(100);
+    await flush();
+    expect(startedAt).toHaveLength(4);
+
+    vi.advanceTimersByTime(900);
+    await all;
+    for (let i = 4; i < startedAt.length; i++) {
+      expect(startedAt[i] - startedAt[i - 4]).toBeGreaterThanOrEqual(1000);
+    }
   });
 
   it("runs what it queued in the order it was scheduled", async () => {
@@ -157,19 +181,21 @@ describe("the token window", () => {
   });
 });
 
-describe("the refill timer", () => {
+describe("the wake-up timer", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("is unref'd, so it can't hold a short-lived process open", () => {
     // scripts/check-lookup-cache.ts imports a provider, which builds a limiter.
-    // A referenced interval would keep that script's event loop alive with
+    // A referenced timer would keep that script's event loop alive with
     // nothing left to do.
     const unref = vi.fn();
-    vi.spyOn(globalThis, "setInterval").mockReturnValue({ unref } as unknown as NodeJS.Timeout);
+    vi.spyOn(globalThis, "setTimeout").mockReturnValue({ unref } as unknown as NodeJS.Timeout);
 
-    getLimiter(nextKey(), 1, 1000);
+    const limiter = getLimiter(nextKey(), 1, 1000);
+    limiter.schedule(async () => "done");
+    limiter.schedule(async () => "done"); // queued, so the limiter sets a timer
 
     expect(unref).toHaveBeenCalledOnce();
   });

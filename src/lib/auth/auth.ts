@@ -139,7 +139,10 @@ export const auth = betterAuth({
          */
         after: async (user, ctx) => {
           const token = inviteTokenFrom(ctx);
-          if (!signupsOpen && token) await markInviteUsed(token, user.email);
+          // Whether or not signups are open: an invite redeemed through
+          // `/join` while they were is just as used, and left pending it would
+          // count toward the inviter's cap and sit in their list until it expired.
+          if (token) await markInviteUsed(token, user.email);
         },
       },
     },

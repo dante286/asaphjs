@@ -91,8 +91,17 @@ export function SharingCard({
   function togglePublic() {
     const next = !shareEnabled;
     setRotated(false);
+    setNotice(null);
     setShareEnabled(next);
-    startTransition(() => togglePublicLinkAction(collectionId, next));
+    startTransition(async () => {
+      try {
+        await togglePublicLinkAction(collectionId, next);
+      } catch {
+        // The checkbox moved before the server answered; put it back.
+        setShareEnabled(!next);
+        setNotice({ text: `Couldn't turn the public link ${next ? "on" : "off"}. Try again.`, warn: true });
+      }
+    });
   }
 
   function rotate() {
@@ -152,16 +161,22 @@ export function SharingCard({
   }
 
   function changeRole(email: string, role: "viewer" | "editor" | "remove") {
-    if (role === "remove") {
-      startTransition(async () => {
-        await removeMemberAction(collectionId, email);
-        setMembers((prev) => prev.filter((m) => m.invitedEmail !== email));
-      });
-      return;
-    }
+    setNotice(null);
     startTransition(async () => {
-      await updateMemberRoleAction(collectionId, email, role);
-      setMembers((prev) => prev.map((m) => (m.invitedEmail === email ? { ...m, role } : m)));
+      try {
+        if (role === "remove") {
+          await removeMemberAction(collectionId, email);
+          setMembers((prev) => prev.filter((m) => m.invitedEmail !== email));
+        } else {
+          await updateMemberRoleAction(collectionId, email, role);
+          setMembers((prev) => prev.map((m) => (m.invitedEmail === email ? { ...m, role } : m)));
+        }
+      } catch {
+        setNotice({
+          text: role === "remove" ? `Couldn't remove ${email}. Try again.` : `Couldn't change ${email}'s role. Try again.`,
+          warn: true,
+        });
+      }
     });
   }
 

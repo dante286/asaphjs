@@ -1,4 +1,5 @@
 import { getLimiter } from "../rate-limiter";
+import { providerTimeoutSignal } from "../provider-timeout";
 import type { Candidate, HydratedFields, MetadataProvider } from "../types";
 
 const BASE = "https://api.themoviedb.org/3";
@@ -75,7 +76,7 @@ async function getJson<T>(path: string): Promise<T | null> {
   const { url, headers } = authorize(path);
 
   return limiter.schedule(async () => {
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { headers, signal: providerTimeoutSignal() });
     if (res.status === 404) return null;
     // `path`, not `url` — the v3 form carries the key in the query string.
     if (!res.ok) throw new Error(`TMDB ${path} failed: ${res.status}`);

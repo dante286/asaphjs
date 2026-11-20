@@ -224,7 +224,12 @@ function ResizeHandle({
         window.removeEventListener("mousemove", move);
         window.removeEventListener("mouseup", up);
         document.body.style.cursor = "";
-        if (dragState.current) onResizeEnd(dragState.current.lastWidth);
+        // A click that didn't drag (or each half of a double-click) changed
+        // nothing; saving it would pin the column's default width as a custom
+        // one, and race the auto-fit's reset.
+        if (dragState.current && dragState.current.lastWidth !== dragState.current.startWidth) {
+          onResizeEnd(dragState.current.lastWidth);
+        }
         dragState.current = null;
       };
       document.body.style.cursor = "col-resize";

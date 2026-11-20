@@ -90,11 +90,17 @@ export async function patchItemRequest(
   itemId: string,
   patch: ItemPatch,
   ifMatchUpdatedAt: string,
+  opts: { keepalive?: boolean } = {},
 ): Promise<Item> {
+  const body = JSON.stringify(patch);
   const res = await fetch(`/api/collections/${collectionId}/items/${itemId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", "If-Match": ifMatchUpdatedAt },
-    body: JSON.stringify(patch),
+    body,
+    // Lets a save sent as the page unloads outlive it. Browsers cap keepalive
+    // bodies at 64KB and reject the fetch outright past that, so a larger one
+    // goes out normally and takes its chances.
+    keepalive: opts.keepalive && body.length < 60_000,
   });
   if (res.status === 409) {
     const body = await res.json();

@@ -28,7 +28,7 @@ export async function getCollectionStats(
       verifiedCount: sql<number>`count(*) filter (where ${items.verified})::int`,
       lentCount: sql<number>`count(*) filter (where ${items.borrower} is not null)::int`,
       distinctFacetCount: facetField
-        ? sql<number>`count(distinct ${items.values}->>${facetField.id})::int`
+        ? sql<number>`count(distinct nullif(${items.values}->>${facetField.id}, ''))::int`
         : sql<number>`null`,
     })
     .from(items)
@@ -52,7 +52,9 @@ export async function getBreakdown(
 ): Promise<BreakdownRow[]> {
   const rows = await db
     .select({
-      label: sql<string>`coalesce(${items.values}->>${field.id}, 'Unset')`,
+      // A blank select stored as "" by older inline edits is unset too, not a
+      // value with an empty label.
+      label: sql<string>`coalesce(nullif(${items.values}->>${field.id}, ''), 'Unset')`,
       count: sql<number>`count(*)::int`,
     })
     .from(items)

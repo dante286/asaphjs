@@ -143,7 +143,7 @@ export function AuthForm({
             }}
           >
             <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
-              <input type="checkbox" defaultChecked style={{ accentColor: "var(--color-accent)" }} />
+              <input type="checkbox" name="rememberMe" defaultChecked style={{ accentColor: "var(--color-accent)" }} />
               Keep me signed in
             </label>
             {allowReset && !isSignUp && (

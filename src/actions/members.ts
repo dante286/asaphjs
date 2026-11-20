@@ -13,6 +13,7 @@ import { resolveRole } from "@/db/queries/members";
 import {
   INVITE_TTL_DAYS,
   acceptInvite,
+  isAcceptedMember,
   inviteMember,
   removeMember,
   updateMemberRole,
@@ -69,6 +70,12 @@ export async function inviteMemberAction(
   // An invite email goes out under this account's name; the account has to
   // own the address it signed up with first.
   if (!(await mayInvite(session.user.id))) return { ok: false, reason: "unverified" };
+
+  // Before the rate limits, which count every attempt: re-entering someone who
+  // already has access sends nothing, so it mustn't spend the recipient's or
+  // the inviter's daily allowance. inviteMember checks again below, for one
+  // who accepts in between.
+  if (await isAcceptedMember(collectionId, address)) return { ok: false, reason: "already_member" };
 
   // Before the invite is written, so a refused attempt leaves any earlier
   // invite and its link exactly as they were.

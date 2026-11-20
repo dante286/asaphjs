@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Blueprint } from "@/components/ui/Blueprint";
@@ -47,7 +48,10 @@ export function ItemDetail({
   const queryClient = useQueryClient();
   const [item, setItem] = useState(initialItem);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "idle" });
-  const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Debounced saves not sent yet, by field: the timer, and the save it will run.
+  const pendingSaves = useRef<Map<string, { timer: ReturnType<typeof setTimeout>; run: (keepalive?: boolean) => void }>>(
+    new Map(),
+  );
 
   // Viewers get no lookup panel — matching is an edit.
   const showLookupPanel = canEdit ? lookup : null;
@@ -102,9 +106,9 @@ export function ItemDetail({
 
   function commit(patch: ItemPatch, debounceKey?: string) {
     setSaveStatus({ kind: "saving" });
-    const run = () => {
+    const run = (keepalive = false) => {
       saveQueue.current = saveQueue.current.then(() =>
-        patchItemRequest(collection.id, item.id, patch, latestUpdatedAt.current)
+        patchItemRequest(collection.id, item.id, patch, latestUpdatedAt.current, { keepalive })
           .then((updated) => {
             acceptServerItem(updated);
             setSaveStatus({ kind: "saved", at: new Date() });
@@ -120,16 +124,36 @@ export function ItemDetail({
       run();
       return;
     }
-    const existing = debounceTimers.current.get(debounceKey);
-    if (existing) clearTimeout(existing);
-    debounceTimers.current.set(
-      debounceKey,
-      setTimeout(() => {
+    const existing = pendingSaves.current.get(debounceKey);
+    if (existing) clearTimeout(existing.timer);
+    pendingSaves.current.set(debounceKey, {
+      run,
+      timer: setTimeout(() => {
+        pendingSaves.current.delete(debounceKey);
         run();
-        debounceTimers.current.delete(debounceKey);
       }, DEBOUNCE_MS),
-    );
+    });
   }
+
+  // A debounced edit is only typed, not saved, for its first 400ms. Leaving
+  // the page in that window — a breadcrumb, Previous/Next, closing the tab —
+  // sends it now rather than dropping it with the timer.
+  useEffect(() => {
+    const pending = pendingSaves.current;
+    const flush = (keepalive: boolean) => {
+      for (const { timer, run } of pending.values()) {
+        clearTimeout(timer);
+        run(keepalive);
+      }
+      pending.clear();
+    };
+    const onPageHide = () => flush(true);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      flush(false);
+    };
+  }, []);
 
   function handleFieldChange(field: FieldDef, index: number, value: unknown) {
     const patch = buildPatchForField(field, index, value);
@@ -140,7 +164,12 @@ export function ItemDetail({
 
   async function handleDelete() {
     if (!window.confirm(`Delete "${item.title}"? This can't be undone.`)) return;
-    await deleteItemRequest(collection.id, item.id);
+    try {
+      await deleteItemRequest(collection.id, item.id);
+    } catch {
+      window.alert(`Couldn't delete "${item.title}". Try again.`);
+      return;
+    }
     // Or the list we're going back to shows the deleted row for up to 30s.
     await markItemsStale(queryClient, collection.id);
     router.push(`/collections/${collection.slug}`);
@@ -150,10 +179,10 @@ export function ItemDetail({
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
-          <a href={`/collections/${collection.slug}`} style={{ textDecoration: "none" }}>
+          <Link href={`/collections/${collection.slug}`} style={{ textDecoration: "none" }}>
             Collections
-          </a>{" "}
-          / <a href={`/collections/${collection.slug}`} style={{ textDecoration: "none" }}>{collection.name}</a> / {item.title}
+          </Link>{" "}
+          / <Link href={`/collections/${collection.slug}`} style={{ textDecoration: "none" }}>{collection.name}</Link> / {item.title}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button

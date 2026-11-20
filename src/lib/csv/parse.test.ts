@@ -82,4 +82,10 @@ describe("parseCsvText", () => {
   it("returns the headers and no rows for a header-only file", () => {
     expect(parseCsvText("Title,Genre\n")).toEqual({ headers: ["Title", "Genre"], rows: [] });
   });
+
+  it("skips rows of bare commas, like the tail of a spreadsheet export", () => {
+    const { rows } = parseCsvText("Title,Genre\nChrono Trigger,RPG\n,,\n , \n,\n");
+
+    expect(rows).toEqual([{ Title: "Chrono Trigger", Genre: "RPG" }]);
+  });
 });

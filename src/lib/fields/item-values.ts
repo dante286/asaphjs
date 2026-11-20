@@ -46,5 +46,18 @@ export function buildPatchForField(field: FieldDef, index: number, value: unknow
   if (column === "verified") return { verified: Boolean(value) };
   if (column === "borrower") return { borrower: value ? String(value) : null };
   if (column === "notes") return { notes: value ? String(value) : null };
-  return { values: { [field.id]: value } };
+  // A cleared value deletes the key (null in a values patch) rather than
+  // storing "" or [] — a blank select would otherwise show up as its own
+  // unlabelled bar in the stats breakdown and count as a distinct value.
+  const cleared = value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
+  return { values: { [field.id]: cleared ? null : value } };
+}
+
+/** Comma-separated text to a tag list — split the way a CSV import splits it — or null when nothing is left. */
+export function parseTags(text: string): string[] | null {
+  const tags = text
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  return tags.length > 0 ? tags : null;
 }

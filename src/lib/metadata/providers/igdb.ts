@@ -1,4 +1,5 @@
 import { getLimiter } from "../rate-limiter";
+import { providerTimeoutSignal } from "../provider-timeout";
 import type { Candidate, HydratedFields, MetadataProvider } from "../types";
 
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token";
@@ -52,7 +53,7 @@ async function requestAppAccessToken(): Promise<string> {
     client_secret: process.env.IGDB_CLIENT_SECRET!,
     grant_type: "client_credentials",
   });
-  const res = await fetch(`${TWITCH_TOKEN_URL}?${params}`, { method: "POST" });
+  const res = await fetch(`${TWITCH_TOKEN_URL}?${params}`, { method: "POST", signal: providerTimeoutSignal() });
   if (!res.ok) throw new Error(`Twitch token request failed: ${res.status}`);
 
   const data = (await res.json()) as { access_token: string; expires_in: number };
@@ -84,6 +85,7 @@ async function igdbQuery(endpoint: string, body: string): Promise<IgdbGame[]> {
         method: "POST",
         headers: { "Client-ID": process.env.IGDB_CLIENT_ID!, Authorization: `Bearer ${token}` },
         body,
+        signal: providerTimeoutSignal(),
       });
       return { token, res };
     };
