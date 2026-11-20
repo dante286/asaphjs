@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Item, ItemsPage } from "./items-client";
-import { firstPageData, flattenRows, mapRows, nextPageParam, prependRow, removeRow, rowCountLabel, totalOf, type ItemsPages } from "./items-pages";
+import { findRow, firstPageData, flattenRows, mapRows, nextPageParam, prependRow, removeRow, rowCountLabel, totalOf, type ItemsPages } from "./items-pages";
 
 function item(id: string, over: Partial<Item> = {}): Item {
   return { id, title: id, values: {}, ...over } as Item;
@@ -58,6 +58,18 @@ describe("totalOf", () => {
   it("reads the first page's count", () => {
     expect(totalOf(pages(page(1, ["a", "b"], 2000), page(2, ["c", "d"], 1999)))).toBe(2000);
     expect(totalOf(undefined)).toBe(0);
+  });
+});
+
+describe("findRow", () => {
+  it("finds a row on a later page", () => {
+    const data = pages(page(1, ["a", "b"], 4), page(2, ["c", "d"], 4));
+    expect(findRow(data, "c")?.id).toBe("c");
+  });
+
+  it("answers undefined for a row that isn't loaded, or an empty cache", () => {
+    expect(findRow(pages(page(1, ["a"], 1)), "z")).toBeUndefined();
+    expect(findRow(undefined, "a")).toBeUndefined();
   });
 });
 

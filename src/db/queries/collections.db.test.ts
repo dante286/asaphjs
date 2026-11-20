@@ -383,6 +383,44 @@ describe("updateCollectionFields", () => {
     expect(updated.fields).toEqual(fields);
     expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(collection.updatedAt.getTime());
   });
+
+  it("removes a dropped field's value from every item, and nothing else", async () => {
+    // Otherwise a removed field lives on in `values`: served on a public share,
+    // and back under any re-added field that slugs to the same id.
+    const collection = await aCollection({ ownerId: owner.id });
+    const item = await createItem({ collectionId: collection.id, title: "Chrono Trigger", values: { console: "SNES", paid: 220 } });
+
+    await updateCollectionFields(collection.id, testFields().filter((f) => f.id !== "paid"));
+
+    const { db } = await import("@/db/client");
+    const after = await db.query.items.findFirst({ where: (i, { eq }) => eq(i.id, item.id) });
+    expect(after?.values).toEqual({ console: "SNES" });
+    // No If-Match bump: nothing an open editor can see has changed.
+    expect(after?.updatedAt.toISOString()).toBe(item.updatedAt.toISOString());
+  });
+
+  it("keeps the values when the caller opts out, as an import does", async () => {
+    const collection = await aCollection({ ownerId: owner.id });
+    const item = await createItem({ collectionId: collection.id, title: "Chrono Trigger", values: { console: "SNES", paid: 220 } });
+
+    await updateCollectionFields(collection.id, testFields().filter((f) => f.id !== "paid"), { dropRemovedValues: false });
+
+    const { db } = await import("@/db/client");
+    const after = await db.query.items.findFirst({ where: (i, { eq }) => eq(i.id, item.id) });
+    expect(after?.values).toEqual({ console: "SNES", paid: 220 });
+  });
+
+  it("leaves other collections' items alone", async () => {
+    const mine = await aCollection({ ownerId: owner.id });
+    const theirs = await aCollection({ ownerId: owner.id, name: "Other" });
+    const other = await createItem({ collectionId: theirs.id, title: "Earthbound", values: { paid: 90 } });
+
+    await updateCollectionFields(mine.id, testFields().filter((f) => f.id !== "paid"));
+
+    const { db } = await import("@/db/client");
+    const after = await db.query.items.findFirst({ where: (i, { eq }) => eq(i.id, other.id) });
+    expect(after?.values).toEqual({ paid: 90 });
+  });
 });
 
 describe("deleteCollection", () => {

@@ -134,6 +134,22 @@ describe("listItems", () => {
 
     expect((await listItems({ collectionId })).total).toBe(3);
   });
+
+  it("pages through rows with the same title without skipping or repeating any", async () => {
+    // Order by title alone is only a partial order, so two queries for
+    // neighbouring pages could tie-break differently. `id` makes it total.
+    const tetrises = [];
+    for (let i = 0; i < 7; i++) tetrises.push(await createItem({ collectionId, title: "Tetris" }));
+
+    const seen: string[] = [];
+    for (let page = 1; page <= 4; page++) {
+      seen.push(...(await listItems({ collectionId, pageSize: 3, page, q: "tetris" })).rows.map((r) => r.id));
+    }
+
+    expect(seen).toHaveLength(7);
+    expect(new Set(seen)).toEqual(new Set(tetrises.map((t) => t.id)));
+    expect(seen).toEqual([...seen].sort());
+  });
 });
 
 describe("patchItem", () => {
@@ -410,5 +426,12 @@ describe("getItemNeighbors", () => {
     const stranger = await createItem({ collectionId: elsewhere.id, title: "Chrono Trigger" });
 
     expect(await getItemNeighbors(collectionId, stranger.id)).toBeNull();
+  });
+
+  it("walks rows with the same title in a stable order", async () => {
+    const copies = [await anItem("Tetris"), await anItem("Tetris"), await anItem("Tetris")];
+    const [first, middle, last] = [...copies].sort((x, y) => (x.id < y.id ? -1 : 1));
+
+    expect(await getItemNeighbors(collectionId, middle.id)).toMatchObject({ prevId: first.id, nextId: last.id });
   });
 });

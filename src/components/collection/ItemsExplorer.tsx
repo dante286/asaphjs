@@ -22,6 +22,7 @@ import {
   type ItemsPage,
 } from "@/lib/api/items-client";
 import {
+  findRow,
   firstPageData,
   flattenRows,
   mapRows,
@@ -158,25 +159,38 @@ export function ItemsExplorer({
   const total = totalOf(data);
 
   const patchMutation = useMutation({
-    mutationFn: async ({ item, patch }: { item: Item; patch: ReturnType<typeof buildPatchForField> }) =>
-      patchItemRequest(collectionId, item.id, patch, item.updatedAt),
+    // One at a time: a mutation in this scope starts only after the one before
+    // it, `onSuccess` included, has finished. So by the time a save goes out,
+    // the cache holds the `updatedAt` the previous save returned. Sent
+    // together, two saves to one row would carry the same If-Match and the
+    // second would get a 409.
+    scope: { id: `item-patches:${collectionId}` },
+    mutationFn: async ({ item, patch }: { item: Item; patch: ReturnType<typeof buildPatchForField> }) => {
+      // Read at send time, not from `item`: optimistic edits never change
+      // `updatedAt`, and a debounce timer holds the `item` from its own render.
+      const ifMatch = findRow(queryClient.getQueryData<ItemsPages>(queryKey), item.id)?.updatedAt ?? item.updatedAt;
+      return patchItemRequest(collectionId, item.id, patch, ifMatch);
+    },
     onMutate: async ({ item, patch }) => {
       setSaveStatus({ kind: "saving" });
       await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<ItemsPages>(queryKey);
       queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) =>
         mapRows(old, (row) =>
           row.id === item.id ? { ...row, ...(patch as Partial<Item>), values: { ...row.values, ...(patch.values ?? {}) } } : row,
         ),
       );
-      return { previous };
     },
-    onError: (err, _vars, context) => {
-      if (context?.previous) queryClient.setQueryData(queryKey, context.previous);
+    // No rollback to a snapshot from `onMutate`. With saves queued, that
+    // snapshot can predate an earlier save that succeeded, and restoring it
+    // would undo that save on screen and restore its stale `updatedAt`.
+    // Take the server's version instead.
+    onError: (err) => {
       if (err instanceof ConflictError) {
         queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) =>
           mapRows(old, (row) => (row.id === err.current.id ? (err.current as unknown as Item) : row)),
         );
+      } else {
+        void queryClient.invalidateQueries({ queryKey });
       }
       setSaveStatus({ kind: "error" });
     },
@@ -209,6 +223,11 @@ export function ItemsExplorer({
     onError: (_err, _item, context) => {
       if (context?.previous) queryClient.setQueryData(queryKey, context.previous);
     },
+    // Paging is by offset, so a delete moves every later row up a slot. The
+    // row that was first on the next page is now last on this one, and asking
+    // for the next page as it stands would skip it. Reload the loaded pages
+    // so they match the server's offsets again.
+    onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
   function handleFieldChange(item: Item, field: FieldDef, index: number, value: unknown) {
