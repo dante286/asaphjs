@@ -41,7 +41,7 @@ function parseRole(role: unknown): "viewer" | "editor" {
  * What became of the invite email. The invite itself exists in every case but
  * `already_member` — mail is how the link travels, not what makes it valid.
  */
-export type InviteEmailOutcome = "sent" | "not_configured" | "failed";
+type InviteEmailOutcome = "sent" | "not_configured" | "failed";
 
 export type InviteResult =
   | { ok: false; reason: "already_member" | "invalid_email" | "rate_limited" | "unverified" }

@@ -14,7 +14,7 @@ export const FIELD_TYPES = [
   "image",
 ] as const;
 
-export const fieldTypeSchema = z.enum(FIELD_TYPES);
+const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
 
 // Human-readable template labels (from the prototype's mock data) mapped to

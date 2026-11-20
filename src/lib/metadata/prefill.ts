@@ -98,7 +98,7 @@ function coerceForField(field: FieldDef, canonical: keyof HydratedFields, raw: u
   return canonical === "genre" ? values.join(", ") : undefined;
 }
 
-export type PrefillPlan = {
+type PrefillPlan = {
   patch: InternalItemPatch;
   /** Field labels the lookup filled in — what the UI reports back. */
   applied: string[];

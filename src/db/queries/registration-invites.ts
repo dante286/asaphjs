@@ -36,7 +36,7 @@ export function normalizeInviteEmail(email: string): string {
  * can move the clock. It agrees with `inviteExpired()`: expired is strictly
  * older than the TTL, so an invite exactly at it is still pending.
  */
-export function pendingInvite(now = Date.now()): SQL {
+function pendingInvite(now = Date.now()): SQL {
   const cutoff = new Date(now - INVITE_TTL_MS);
   return and(
     isNotNull(registrationInvites.token),
@@ -75,7 +75,7 @@ export async function markInviteUsed(token: string, email: string, now = new Dat
     );
 }
 
-export type InviteToRegisterResult =
+type InviteToRegisterResult =
   | { ok: true; invite: typeof registrationInvites.$inferSelect & { token: string } }
   | { ok: false; reason: "has_account" | "already_invited" | "cap" }
   | { ok: false; reason: "cooldown"; secondsLeft: number };
