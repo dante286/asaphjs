@@ -251,13 +251,55 @@ export async function createCollection(params: {
   });
 }
 
-export async function updateCollectionFields(id: string, fields: FieldDef[]) {
-  const [row] = await db
-    .update(collections)
-    .set({ fields, updatedAt: touchedNow })
-    .where(eq(collections.id, id))
-    .returning();
-  return row;
+/**
+ * Replaces the collection's field defs. A field that's no longer in the list
+ * also has its value removed from every item, in the same transaction, so a
+ * removed field can't come back: not on a public share (which would otherwise
+ * serve a key no field describes), and not under a re-added field that slugs to
+ * the same id, possibly with a different type.
+ *
+ * `dropRemovedValues: false` is for callers that send a field list they didn't
+ * edit, such as an import adding columns. If that list is stale, it may
+ * be missing a field someone else just added. Dropping the definition is
+ * recoverable, but deleting every item's value for it isn't.
+ *
+ * Item `updated_at` is left alone. The values removed belong to no field, so
+ * no view shows them, and touching every row would make each open editor's
+ * next save fail its If-Match.
+ */
+export async function updateCollectionFields(
+  id: string,
+  fields: FieldDef[],
+  opts: { dropRemovedValues?: boolean } = {},
+) {
+  const { dropRemovedValues = true } = opts;
+
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ fields: collections.fields })
+      .from(collections)
+      .where(eq(collections.id, id))
+      .for("update");
+
+    const [row] = await tx
+      .update(collections)
+      .set({ fields, updatedAt: touchedNow })
+      .where(eq(collections.id, id))
+      .returning();
+
+    if (dropRemovedValues && current) {
+      const kept = new Set(fields.map((f) => f.id));
+      const removed = current.fields.map((f) => f.id).filter((fieldId) => !kept.has(fieldId));
+      if (removed.length > 0) {
+        await tx
+          .update(items)
+          .set({ values: sql`${items.values} - ${sql.param(removed)}::text[]` as unknown as typeof items.values })
+          .where(eq(items.collectionId, id));
+      }
+    }
+
+    return row;
+  });
 }
 
 export async function updateCollectionSettings(

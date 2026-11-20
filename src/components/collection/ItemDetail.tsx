@@ -66,18 +66,37 @@ export function ItemDetail({
     .slice(0, 3)
     .join(" · ");
 
+  // The If-Match for the next save. It comes from the server's last answer, not
+  // from `item`: optimistic edits never change `updatedAt`, and a debounce
+  // timer holds the `item` from the render that set it. It's a ref because a
+  // queued save runs in the same tick the previous one resolves, before React
+  // has re-rendered.
+  const latestUpdatedAt = useRef(initialItem.updatedAt);
+  // Saves go out one at a time, each with the `updatedAt` its predecessor
+  // returned. Sent together, the second would carry the same If-Match as the
+  // first and get a 409.
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+
+  function acceptServerItem(updated: Item) {
+    latestUpdatedAt.current = updated.updatedAt;
+    setItem(updated);
+  }
+
   function commit(patch: ItemPatch, debounceKey?: string) {
     setSaveStatus({ kind: "saving" });
-    const run = () =>
-      patchItemRequest(collection.id, item.id, patch, item.updatedAt)
-        .then((updated) => {
-          setItem(updated);
-          setSaveStatus({ kind: "saved", at: new Date() });
-        })
-        .catch((err) => {
-          if (err instanceof ConflictError) setItem(err.current);
-          setSaveStatus({ kind: "error" });
-        });
+    const run = () => {
+      saveQueue.current = saveQueue.current.then(() =>
+        patchItemRequest(collection.id, item.id, patch, latestUpdatedAt.current)
+          .then((updated) => {
+            acceptServerItem(updated);
+            setSaveStatus({ kind: "saved", at: new Date() });
+          })
+          .catch((err) => {
+            if (err instanceof ConflictError) acceptServerItem(err.current);
+            setSaveStatus({ kind: "error" });
+          }),
+      );
+    };
 
     if (!debounceKey) {
       run();
@@ -148,7 +167,7 @@ export function ItemDetail({
             item={item}
             canEdit={canEdit}
             plate={PLATES[neighbors.position % PLATES.length]}
-            onItemUpdate={setItem}
+            onItemUpdate={acceptServerItem}
             onStatusChange={setSaveStatus}
           />
 
@@ -158,7 +177,7 @@ export function ItemDetail({
               item={item}
               lookup={showLookupPanel}
               canEdit={canEdit}
-              onItemUpdate={setItem}
+              onItemUpdate={acceptServerItem}
               onStatusChange={setSaveStatus}
             />
           )}

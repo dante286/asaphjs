@@ -9,17 +9,21 @@ import type { ExternalRef } from "@/types";
  * The single place the public-share stripping rule is enforced — used by
  * both the `/s/:token` page and the items API route when role === 'public',
  * so a leak in one path can't happen without the other catching it too.
+ *
+ * An allow-list: only values of fields that currently exist and aren't
+ * private go out. A key no field describes (a removed field, or a stray key
+ * from an import) is dropped, not passed through.
  */
 export function stripItemsForPublic<T extends { borrower: unknown; notes: unknown; values: Record<string, unknown> }>(
   rows: T[],
   fields: FieldDef[],
 ): T[] {
-  const privateFieldIds = new Set(fields.filter((f) => f.private).map((f) => f.id));
+  const publicFieldIds = new Set(fields.filter((f) => !f.private).map((f) => f.id));
   return rows.map((row) => ({
     ...row,
     borrower: null,
     notes: null,
-    values: Object.fromEntries(Object.entries(row.values).filter(([key]) => !privateFieldIds.has(key))),
+    values: Object.fromEntries(Object.entries(row.values).filter(([key]) => publicFieldIds.has(key))),
   }));
 }
 
@@ -61,14 +65,16 @@ export async function listItems(params: ListItemsParams) {
   if (params.lentOnly) conditions.push(isNotNull(items.borrower));
 
   const where = and(...conditions);
-  const orderBy = params.sort === "updated" ? desc(items.updatedAt) : asc(items.sortTitle);
+  // `id` breaks ties. Without it, rows with the same title can swap places between
+  // two page queries, so OFFSET paging returns one twice and never returns another.
+  const orderBy = params.sort === "updated" ? [desc(items.updatedAt), desc(items.id)] : [asc(items.sortTitle), asc(items.id)];
 
   const [rows, [{ count }]] = await Promise.all([
     db
       .select()
       .from(items)
       .where(where)
-      .orderBy(orderBy)
+      .orderBy(...orderBy)
       .limit(pageSize)
       .offset((page - 1) * pageSize),
     db.select({ count: sql<number>`count(*)::int` }).from(items).where(where),
@@ -210,10 +216,10 @@ export async function getItemNeighbors(collectionId: string, itemId: string): Pr
   }>(sql`
     with ordered as (
       select id,
-             row_number() over (order by sort_title) as rn,
+             row_number() over (order by sort_title, id) as rn,
              count(*) over () as total,
-             lag(id) over (order by sort_title) as prev_id,
-             lead(id) over (order by sort_title) as next_id
+             lag(id) over (order by sort_title, id) as prev_id,
+             lead(id) over (order by sort_title, id) as next_id
       from ${items}
       where collection_id = ${collectionId}
     )

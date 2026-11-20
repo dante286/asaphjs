@@ -76,7 +76,7 @@ describe("stripItemsForPublic", () => {
   });
 
   it("leaves values alone when no field is private", () => {
-    const [stripped] = stripItemsForPublic([row()], FIELDS.filter((f) => !f.private));
+    const [stripped] = stripItemsForPublic([row()], FIELDS.map((f) => ({ ...f, private: false })));
 
     expect(stripped.values).toEqual({ console: "SNES", purchase_price: 220 });
     // Borrower and notes are stripped by column, not by field config, so they
@@ -86,6 +86,14 @@ describe("stripItemsForPublic", () => {
 
   it("handles an empty result set", () => {
     expect(stripItemsForPublic([], FIELDS)).toEqual([]);
+  });
+
+  it("drops a value no field describes", () => {
+    // A removed field, or a stray key, isn't public just because nothing marks
+    // it private: the rule is an allow-list of the fields that exist.
+    const [stripped] = stripItemsForPublic([row({ values: { console: "SNES", old_field: "secret" } })], FIELDS);
+
+    expect(stripped.values).toEqual({ console: "SNES" });
   });
 
   it("ignores a private field with no value on this row", () => {

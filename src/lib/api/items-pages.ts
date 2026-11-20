@@ -41,6 +41,15 @@ export function totalOf(data: ItemsPages | undefined): number {
   return data?.pages[0]?.total ?? 0;
 }
 
+/** The cached copy of a row, wherever it's paged. */
+export function findRow(data: ItemsPages | undefined, itemId: string): Item | undefined {
+  for (const page of data?.pages ?? []) {
+    const row = page.rows.find((r) => r.id === itemId);
+    if (row) return row;
+  }
+  return undefined;
+}
+
 export function mapRows(data: ItemsPages | undefined, fn: (row: Item) => Item): ItemsPages | undefined {
   if (!data) return data;
   return { ...data, pages: data.pages.map((page) => ({ ...page, rows: page.rows.map(fn) })) };

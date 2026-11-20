@@ -82,7 +82,10 @@ export async function importCsvIntoCollectionAction(input: {
   if ("error" in parsed) return parsed;
   const { rows } = parsed;
 
-  await updateCollectionFields(input.collectionId, fields);
+  // An import only ever adds fields. If this list was loaded before someone
+  // else added one, it's missing that field, so don't treat the gap as a
+  // removal and wipe that field's values.
+  await updateCollectionFields(input.collectionId, fields, { dropRemovedValues: false });
   await updateCollectionSettings(input.collectionId, { importMappings: mapping });
 
   return commitImport({ collectionId: input.collectionId, fields, mapping, rows });

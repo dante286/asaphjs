@@ -8,7 +8,7 @@ export function SaveStatusIndicator({ status }: { status: SaveStatus }) {
   }
 
   if (status.kind === "error") {
-    return <span style={{ fontSize: 11.5, color: "#b5544a" }}>Couldn&rsquo;t save — retrying</span>;
+    return <span style={{ fontSize: 11.5, color: "#b5544a" }}>Couldn&rsquo;t save that change</span>;
   }
 
   const hh = String(status.at.getHours()).padStart(2, "0");

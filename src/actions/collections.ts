@@ -9,7 +9,6 @@ import { z } from "zod";
 import {
   createCollection as createCollectionQuery,
   deleteCollection as deleteCollectionQuery,
-  getCollectionById,
   updateCollectionFields as updateCollectionFieldsQuery,
   updateCollectionSettings as updateCollectionSettingsQuery,
 } from "@/db/queries/collections";
@@ -112,10 +111,4 @@ export async function deleteCollectionAction(collectionId: string) {
   // Deleting happens from account settings, where the owner may have more
   // collections to manage — so re-render in place rather than navigating away.
   refresh();
-}
-
-export async function getCollectionOr404(collectionId: string) {
-  const collection = await getCollectionById(collectionId);
-  if (!collection) throw new Error("Collection not found.");
-  return collection;
 }

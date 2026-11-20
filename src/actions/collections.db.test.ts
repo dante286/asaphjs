@@ -259,15 +259,3 @@ describe("deleteCollectionAction", () => {
     expect(await getCollectionById(collectionId)).toBeTruthy();
   });
 });
-
-describe("getCollectionOr404", () => {
-  it("throws for a collection that isn't there", async () => {
-    await expect(actions.getCollectionOr404("00000000-0000-0000-0000-000000000000")).rejects.toThrow(
-      "Collection not found.",
-    );
-  });
-
-  it("answers with the row for one that is", async () => {
-    expect(await actions.getCollectionOr404(collectionId)).toMatchObject({ id: collectionId });
-  });
-});
