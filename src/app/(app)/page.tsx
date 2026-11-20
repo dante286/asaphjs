@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth/session";
 import { listCollectionsForUser } from "@/db/queries/collections";
 import { CollectionCard } from "@/components/dashboard/CollectionCard";
 import { Blueprint } from "@/components/ui/Blueprint";
+import { trackedFeatures } from "@/lib/collection-features";
 
 export default async function DashboardPage() {
   const session = await requireSession();
@@ -11,8 +12,16 @@ export default async function DashboardPage() {
   const totals = [
     { label: "Collections", value: rows.length },
     { label: "Total items", value: rows.reduce((sum, r) => sum + r.itemCount, 0) },
-    { label: "Verified", value: rows.reduce((sum, r) => sum + r.verifiedCount, 0) },
-    { label: "Lent out", value: rows.reduce((sum, r) => sum + r.lentCount, 0) },
+    // Only from collections that track each one: a collection with lending off
+    // still has a `borrower` column, and old values in it aren't "lent out".
+    {
+      label: "Verified",
+      value: rows.reduce((sum, r) => sum + (trackedFeatures(r.collection.features).verified ? r.verifiedCount : 0), 0),
+    },
+    {
+      label: "Lent out",
+      value: rows.reduce((sum, r) => sum + (trackedFeatures(r.collection.features).lending ? r.lentCount : 0), 0),
+    },
   ];
 
   return (

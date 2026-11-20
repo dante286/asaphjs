@@ -15,11 +15,14 @@ export function AcceptInviteButton({ token }: { token: string }) {
         onClick={() =>
           startTransition(async () => {
             try {
-              await acceptInviteAction(token);
+              // Success redirects; an expected refusal comes back as `{ error }`,
+              // since a thrown message wouldn't survive production.
+              const result = await acceptInviteAction(token);
+              if (result?.error) setError(result.error);
             } catch (err) {
               const digest = (err as { digest?: unknown })?.digest;
               if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) throw err;
-              setError(err instanceof Error ? err.message : "Couldn't accept the invite.");
+              setError("Couldn't accept the invite. Please try again.");
             }
           })
         }

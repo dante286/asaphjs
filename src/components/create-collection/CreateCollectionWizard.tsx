@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Blueprint } from "@/components/ui/Blueprint";
+import { clickableProps } from "@/components/ui/clickable";
 import { Tag } from "@/components/ui/Tag";
 import { CsvDropzone } from "@/components/create-collection/CsvDropzone";
 import { createCollectionAction } from "@/actions/collections";
@@ -159,7 +160,8 @@ export function CreateCollectionWizard({ templates }: { templates: TemplateOptio
                   flexDirection: "column",
                   gap: 2,
                 }}
-                onClick={() => pickTemplate(t)}
+                {...clickableProps(() => pickTemplate(t))}
+                aria-pressed={active}
               >
                 <span style={{ fontFamily: "var(--font-heading)", fontSize: 15, color: active ? "var(--color-accent-900)" : undefined }}>
                   {t.name}

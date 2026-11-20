@@ -1,16 +1,17 @@
 import { Blueprint } from "@/components/ui/Blueprint";
 import type { CollectionStats } from "@/db/queries/stats";
+import type { TrackedFeatures } from "@/lib/collection-features";
 
-export function StatTiles({ stats }: { stats: CollectionStats }) {
-  const tiles: { value: number | string; label: string; note?: string }[] = [
-    { value: stats.itemCount, label: "Items" },
-    {
+export function StatTiles({ stats, tracked }: { stats: CollectionStats; tracked: TrackedFeatures }) {
+  const tiles: { value: number | string; label: string; note?: string }[] = [{ value: stats.itemCount, label: "Items" }];
+  if (tracked.verified) {
+    tiles.push({
       value: stats.verifiedCount,
       label: "Verified",
       note: stats.itemCount ? `${Math.round((stats.verifiedCount / stats.itemCount) * 100)}%` : "",
-    },
-    { value: stats.lentCount, label: "Lent out" },
-  ];
+    });
+  }
+  if (tracked.lending) tiles.push({ value: stats.lentCount, label: "Lent out" });
   if (stats.facetLabel) {
     tiles.push({ value: stats.distinctFacetCount ?? 0, label: `Distinct ${stats.facetLabel.toLowerCase()}` });
   }

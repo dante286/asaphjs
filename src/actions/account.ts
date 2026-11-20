@@ -8,7 +8,7 @@ import { emailVerificationAvailable, VERIFIED_CALLBACK_PATH } from "@/lib/auth/e
 import { TOO_MANY_ATTEMPTS } from "@/lib/auth/rate-limit";
 import { requireSession } from "@/lib/auth/session";
 import { listCollectionsForUser } from "@/db/queries/collections";
-import { listItems } from "@/db/queries/items";
+import { listAllItems } from "@/db/queries/items";
 import { csvCell, csvSectionHeading } from "@/lib/csv/export";
 import { getFieldValue } from "@/lib/fields/item-values";
 
@@ -149,7 +149,7 @@ export async function exportAllCsvAction() {
 
   const parts: string[] = [];
   for (const { collection } of collectionRows) {
-    const { rows } = await listItems({ collectionId: collection.id, pageSize: 10000 });
+    const rows = await listAllItems(collection.id);
     const fields = collection.fields;
     parts.push(csvSectionHeading(collection.name));
     parts.push(fields.map((f) => csvCell(f.label)).join(","));
@@ -168,7 +168,7 @@ export async function exportAllJsonAction() {
 
   const data = await Promise.all(
     collectionRows.map(async ({ collection }) => {
-      const { rows } = await listItems({ collectionId: collection.id, pageSize: 10000 });
+      const rows = await listAllItems(collection.id);
       return {
         name: collection.name,
         templateKey: collection.templateKey,

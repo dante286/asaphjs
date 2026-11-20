@@ -224,6 +224,10 @@ export function MetadataLookupPanel({
             disabled={pending}
             onClick={() => {
               inFlight.current?.abort();
+              // The aborted search's `finally` leaves `searching` alone (so a
+              // newer search it was replaced by keeps its spinner), so Cancel
+              // has to clear it, or every lookup button stays disabled.
+              setSearching(false);
               setOpen(false);
               setError(null);
             }}

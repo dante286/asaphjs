@@ -1,4 +1,5 @@
 import type { FieldDef } from "@/lib/fields/field-def";
+import { toIsoDate } from "@/lib/fields/dates";
 import { getFieldValue, type ItemLike } from "@/lib/fields/item-values";
 
 // The per-field-type input renderer shared by the table view and the item
@@ -54,7 +55,10 @@ export function FieldCell({
     return (
       <input
         type="date"
-        defaultValue={value ? String(value) : ""}
+        // Normalised for display: rows imported before dates were stored as
+        // `YYYY-MM-DD` hold "03/14/2021" and the like, which a date input
+        // rejects and shows blank.
+        defaultValue={value ? (toIsoDate(String(value)) ?? "") : ""}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value || null)}
         style={{ border: "1px solid transparent", background: "transparent", font: "inherit", fontSize: 13.5, padding: "4px 6px", color: "inherit" }}

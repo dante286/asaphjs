@@ -9,6 +9,7 @@ import { LoadMore } from "@/components/collection/LoadMore";
 import { fetchItems, type ItemsPage } from "@/lib/api/items-client";
 import { firstPageData, flattenRows, nextPageParam, rowCountLabel, totalOf, type ItemsPages } from "@/lib/api/items-pages";
 import type { FieldDef } from "@/lib/fields/field-def";
+import type { TrackedFeatures } from "@/lib/collection-features";
 
 /**
  * The `/s/:token` page's items: the server-rendered first page, then the rest
@@ -22,9 +23,11 @@ export function PublicItemsList({
   fields,
   defaultView,
   initialData,
+  tracked,
 }: {
   collectionId: string;
   token: string;
+  tracked: TrackedFeatures;
   /** Public fields only; private ones are already gone from the rows too. */
   fields: FieldDef[];
   defaultView: "covers" | "table";
@@ -82,7 +85,7 @@ export function PublicItemsList({
           rowCountLabel={rowCountLabel(items.length, total, hasNextPage)}
         />
       ) : (
-        <CoversView items={items} fields={fields} />
+        <CoversView items={items} fields={fields} tracked={tracked} />
       )}
 
       {hasNextPage && <LoadMore onLoadMore={fetchNextPage} loading={isFetchingNextPage} />}

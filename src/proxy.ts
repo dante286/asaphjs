@@ -24,7 +24,9 @@ export function proxy(request: NextRequest) {
 
   if (SIGNED_IN_ONLY.some((pattern) => pattern.test(pathname)) && !getSessionCookie(request)) {
     const url = new URL("/auth", request.url);
-    url.searchParams.set("next", pathname);
+    // The query string too: a verification link lands on `/account?verified=1`,
+    // and without it the "confirmed" card is gone by the time you've signed in.
+    url.searchParams.set("next", pathname + request.nextUrl.search);
     return NextResponse.redirect(url);
   }
 

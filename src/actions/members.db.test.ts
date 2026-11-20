@@ -173,7 +173,7 @@ describe("inviteMemberAction: the email", () => {
     expect(mail.send).toHaveBeenCalledTimes(2);
     expect(mail.send.mock.calls[1][0].text).toContain(second.inviteUrl);
     signedInAs(guest);
-    await expect(actions.acceptInviteAction(first.token)).rejects.toThrow("Invite not found.");
+    expect(await actions.acceptInviteAction(first.token)).toEqual({ error: "Invite not found." });
     await signedInAsAndAccept(guest, second.token);
   });
 
@@ -445,9 +445,9 @@ describe("acceptInviteAction", () => {
 
     // A leaked link must not admit whoever opens it — the address the owner
     // named is the whole authorization.
-    await expect(actions.acceptInviteAction(invite.token)).rejects.toThrow(
-      "This invite was sent to a different email address.",
-    );
+    expect(await actions.acceptInviteAction(invite.token)).toEqual({
+      error: "This invite was sent to a different email address.",
+    });
     expect(await resolveRole(collectionId, interloper.id)).toBeNull();
   });
 
@@ -455,7 +455,7 @@ describe("acceptInviteAction", () => {
     const guest = await createTestUser();
     signedInAs(guest);
 
-    await expect(actions.acceptInviteAction("tok_nope")).rejects.toThrow("Invite not found.");
+    expect(await actions.acceptInviteAction("tok_nope")).toEqual({ error: "Invite not found." });
   });
 
   it("reports an expired invite as expired", async () => {
@@ -470,9 +470,7 @@ describe("acceptInviteAction", () => {
       .where(eq(collectionMembers.inviteToken, invite.token));
     signedInAs(guest);
 
-    await expect(actions.acceptInviteAction(invite.token)).rejects.toThrow(
-      "This invite has expired.",
-    );
+    expect(await actions.acceptInviteAction(invite.token)).toEqual({ error: "This invite has expired." });
   });
 
   it("needs a session, since the invite is bound to an account", async () => {

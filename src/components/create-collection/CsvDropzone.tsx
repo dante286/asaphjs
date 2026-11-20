@@ -1,12 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { MAX_CSV_BYTES, MAX_CSV_MB, csvTooLargeMessage } from "@/lib/csv/limits";
 import { parseCsvText, type ParsedCsv } from "@/lib/csv/parse";
 
 export function CsvDropzone({ onParsed }: { onParsed: (csv: ParsedCsv, fileName: string) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -35,8 +34,14 @@ export function CsvDropzone({ onParsed }: { onParsed: (csv: ParsedCsv, fileName:
   }
 
   return (
+    // A <label> around the file input, so clicking anywhere opens the picker and
+    // the input itself takes keyboard focus (Enter or Space opens it). Visually
+    // hidden rather than `hidden`, which would also take it out of the tab order.
     <Blueprint
+      as="label"
+      className="csv-dropzone"
       style={{
+        display: "block",
         marginTop: 16,
         padding: 16,
         borderStyle: "dashed",
@@ -44,7 +49,6 @@ export function CsvDropzone({ onParsed }: { onParsed: (csv: ParsedCsv, fileName:
         cursor: "pointer",
         background: dragOver ? "var(--color-accent-100)" : undefined,
       }}
-      onClick={() => inputRef.current?.click()}
     >
       <div
         onDragOver={(e) => {
@@ -60,13 +64,14 @@ export function CsvDropzone({ onParsed }: { onParsed: (csv: ParsedCsv, fileName:
         }}
       >
         <input
-          ref={inputRef}
           type="file"
           accept=".csv,text/csv"
-          hidden
+          className="visually-hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleFile(file);
+            // So picking the same file again still fires a change.
+            e.target.value = "";
           }}
         />
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: "0 auto 6px", color: "var(--color-accent)" }}>
@@ -79,7 +84,11 @@ export function CsvDropzone({ onParsed }: { onParsed: (csv: ParsedCsv, fileName:
           Drop a file or click to browse. Its headers become the collection&rsquo;s fields, with
           types guessed per column. Up to {MAX_CSV_MB} MB.
         </div>
-        {error && <div style={{ fontSize: 11.5, color: "#b5544a", marginTop: 6 }}>{error}</div>}
+        {error && (
+          <div role="alert" style={{ fontSize: 11.5, color: "#b5544a", marginTop: 6 }}>
+            {error}
+          </div>
+        )}
       </div>
     </Blueprint>
   );

@@ -2,10 +2,12 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { CsvDropzone } from "@/components/create-collection/CsvDropzone";
 import { importCsvIntoCollectionAction, rollbackImportBatchAction } from "@/actions/imports";
-import { guessColumnType } from "@/lib/fields/type-guess";
+import { guessColumn } from "@/lib/fields/type-guess";
+import { markItemsStale } from "@/lib/api/items-cache";
 import { slugifyFieldLabel, type FieldDef } from "@/lib/fields/field-def";
 import type { ParsedCsv } from "@/lib/csv/parse";
 import { csvTooLargeMessage } from "@/lib/csv/limits";
@@ -26,6 +28,7 @@ export function ImportWizard({
   savedMapping: Record<string, string>;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [isPending, startTransition] = useTransition();
   const [csv, setCsv] = useState<ParsedCsv | null>(null);
   const [choices, setChoices] = useState<Record<string, string>>({});
@@ -54,11 +57,13 @@ export function ImportWizard({
       if (choices[header] !== NEW) continue;
       const id = slugifyFieldLabel(header);
       if (fields.some((f) => f.id === id)) continue;
-      const samples = csv.rows.slice(0, 50).map((r) => r[header] ?? "");
+      // All rows, not a sample: a select needs every value as an option.
+      const { type, options } = guessColumn(csv.rows.map((r) => r[header] ?? ""));
       fields.push({
         id,
         label: header,
-        type: guessColumnType(samples),
+        type,
+        options,
         order: fields.length,
         origin: "csv",
         showInTable: true,
@@ -95,7 +100,11 @@ export function ImportWizard({
           csv: payload,
         });
         if ("error" in res) setError(res.error);
-        else setResult(res);
+        else {
+          // "View collection" would otherwise show the cached list without the new rows.
+          void markItemsStale(queryClient, collectionId);
+          setResult(res);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Import failed.");
       }
@@ -106,6 +115,7 @@ export function ImportWizard({
     if (!result) return;
     startTransition(async () => {
       await rollbackImportBatchAction(collectionId, result.batchId);
+      void markItemsStale(queryClient, collectionId);
       setResult(null);
       setCsv(null);
       router.refresh();

@@ -34,9 +34,11 @@ import {
   type ItemsPages,
 } from "@/lib/api/items-pages";
 import { fetchViewPrefs, saveViewPrefs, type ViewPrefs } from "@/lib/api/view-prefs-client";
+import { itemsQueryPrefix, markItemsStale } from "@/lib/api/items-cache";
 import { buildPatchForField } from "@/lib/fields/item-values";
 import type { FieldDef } from "@/lib/fields/field-def";
 import type { LookupConfig } from "@/lib/metadata/lookup-config";
+import type { TrackedFeatures } from "@/lib/collection-features";
 
 const DEBOUNCED_TYPES = new Set(["text", "longtext", "number", "url", "currency", "tags"]);
 const DEBOUNCE_MS = 400;
@@ -50,6 +52,7 @@ export function ItemsExplorer({
   initialData,
   initialViewPrefs,
   lookup,
+  tracked,
 }: {
   collectionId: string;
   collectionSlug: string;
@@ -60,6 +63,8 @@ export function ItemsExplorer({
   initialViewPrefs: ViewPrefs;
   /** Resolved server-side; null when this collection has no metadata provider. */
   lookup: LookupConfig | null;
+  /** Whether the Verified / Lent out filters, flags and inputs apply here. */
+  tracked: TrackedFeatures;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -69,6 +74,7 @@ export function ItemsExplorer({
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [lentOnly, setLentOnly] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "idle" });
+  const [rowResets, setRowResets] = useState<Record<string, number>>({});
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(initialViewPrefs.columnWidths);
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(initialViewPrefs.hiddenColumns);
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -184,13 +190,18 @@ export function ItemsExplorer({
     // snapshot can predate an earlier save that succeeded, and restoring it
     // would undo that save on screen and restore its stale `updatedAt`.
     // Take the server's version instead.
-    onError: (err) => {
+    onError: async (err, { item }) => {
+      // Remount the row's cells once the cache holds the server's copy, so they
+      // stop showing the value that didn't save.
+      const resetRow = () => setRowResets((prev) => ({ ...prev, [item.id]: (prev[item.id] ?? 0) + 1 }));
       if (err instanceof ConflictError) {
         queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) =>
           mapRows(old, (row) => (row.id === err.current.id ? (err.current as unknown as Item) : row)),
         );
+        resetRow();
       } else {
-        void queryClient.invalidateQueries({ queryKey });
+        await queryClient.invalidateQueries({ queryKey });
+        resetRow();
       }
       setSaveStatus({ kind: "error" });
     },
@@ -198,6 +209,8 @@ export function ItemsExplorer({
       queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) =>
         mapRows(old, (row) => (row.id === updated.id ? updated : row)),
       );
+      // Only this filter's list was updated in place; the others are now behind.
+      void markItemsStale(queryClient, collectionId);
       setSaveStatus({ kind: "saved", at: new Date() });
     },
   });
@@ -209,6 +222,7 @@ export function ItemsExplorer({
     // just added.
     onSuccess: (item) => {
       queryClient.setQueryData<ItemsPages | undefined>(queryKey, (old) => prependRow(old, item));
+      void markItemsStale(queryClient, collectionId);
     },
   });
 
@@ -227,7 +241,8 @@ export function ItemsExplorer({
     // row that was first on the next page is now last on this one, and asking
     // for the next page as it stands would skip it. Reload the loaded pages
     // so they match the server's offsets again.
-    onSettled: () => queryClient.invalidateQueries({ queryKey }),
+    // Every filter's list, not just this one: the deleted row is in those too.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: itemsQueryPrefix(collectionId) }),
   });
 
   function handleFieldChange(item: Item, field: FieldDef, index: number, value: unknown) {
@@ -277,22 +292,26 @@ export function ItemsExplorer({
               style={{ border: 0, background: "transparent", font: "inherit", fontSize: 13, outline: "none", width: "min(210px,40vw)", color: "inherit" }}
             />
           </Blueprint>
-          <button
-            type="button"
-            className={verifiedOnly ? "tag tag-accent" : "tag tag-neutral"}
-            style={{ cursor: "pointer", border: "none" }}
-            onClick={() => setVerifiedOnly((v) => !v)}
-          >
-            Verified only
-          </button>
-          <button
-            type="button"
-            className={lentOnly ? "tag tag-accent" : "tag tag-neutral"}
-            style={{ cursor: "pointer", border: "none" }}
-            onClick={() => setLentOnly((v) => !v)}
-          >
-            Lent out
-          </button>
+          {tracked.verified && (
+            <button
+              type="button"
+              className={verifiedOnly ? "tag tag-accent" : "tag tag-neutral"}
+              style={{ cursor: "pointer", border: "none" }}
+              onClick={() => setVerifiedOnly((v) => !v)}
+            >
+              Verified only
+            </button>
+          )}
+          {tracked.lending && (
+            <button
+              type="button"
+              className={lentOnly ? "tag tag-accent" : "tag tag-neutral"}
+              style={{ cursor: "pointer", border: "none" }}
+              onClick={() => setLentOnly((v) => !v)}
+            >
+              Lent out
+            </button>
+          )}
           {canEdit && (
             <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -318,7 +337,7 @@ export function ItemsExplorer({
       </div>
 
       {view === "covers" ? (
-        <CoversView items={items} fields={fields} onOpenItem={openItem} />
+        <CoversView items={items} fields={fields} onOpenItem={openItem} tracked={tracked} />
       ) : (
         <TableView
           items={items}
@@ -333,6 +352,7 @@ export function ItemsExplorer({
           onResizeColumnEnd={handleResizeColumnEnd}
           onAutoFitColumn={handleAutoFitColumn}
           rowCountLabel={rowCountLabel}
+          rowResets={rowResets}
         />
       )}
 
@@ -347,6 +367,7 @@ export function ItemsExplorer({
           collectionId={collectionId}
           fields={fields}
           lookup={lookup}
+          tracked={tracked}
         />
       )}
     </div>

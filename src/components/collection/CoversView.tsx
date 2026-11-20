@@ -1,8 +1,10 @@
 import { Blueprint } from "@/components/ui/Blueprint";
+import { clickableProps } from "@/components/ui/clickable";
 import type { FieldDef } from "@/lib/fields/field-def";
 import { getFieldValue } from "@/lib/fields/item-values";
 import { thumbUrlFor } from "@/lib/uploads/urls";
 import type { Item } from "@/lib/api/items-client";
+import type { TrackedFeatures } from "@/lib/collection-features";
 
 const PLATES = [
   "var(--color-accent-200)",
@@ -16,9 +18,12 @@ export function CoversView({
   items,
   fields,
   onOpenItem,
+  tracked = { verified: true, lending: true },
 }: {
   items: Item[];
   fields: FieldDef[];
+  /** Which of the Verified / Lent flags this collection shows on a card. */
+  tracked?: TrackedFeatures;
   /**
    * Optional so this renders read-only. There's no `"use client"` here — the
    * component takes its environment from whoever imports it, and the public
@@ -33,14 +38,15 @@ export function CoversView({
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(clamp(130px,15vw,182px),1fr))", gap: "clamp(14px,2vw,24px)" }}>
       {items.map((item, i) => {
         const sub = cardField ? String(getFieldValue(item, cardField, fields.indexOf(cardField)) ?? "") : "";
-        const flag = item.verified ? "Verified" : item.borrower ? `Lent — ${item.borrower}` : "";
+        const flag =
+          tracked.verified && item.verified ? "Verified" : tracked.lending && item.borrower ? `Lent — ${item.borrower}` : "";
         // Uploads have a grid-sized derivative; provider covers come back as-is.
         const cover = thumbUrlFor(item.coverUrl);
         return (
           <div
             key={item.id}
             style={onOpenItem ? { cursor: "pointer" } : undefined}
-            onClick={onOpenItem ? () => onOpenItem(item) : undefined}
+            {...(onOpenItem ? { ...clickableProps(() => onOpenItem(item)), "aria-label": `Open ${item.title}` } : {})}
           >
             <Blueprint
               className="duotone"

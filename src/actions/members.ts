@@ -153,15 +153,19 @@ export async function rotateShareTokenAction(collectionId: string) {
   refresh();
 }
 
-export async function acceptInviteAction(token: string) {
+/**
+ * Expected refusals come back as `{ error }` rather than as a throw. In
+ * production Next replaces the message of anything a Server Action throws with
+ * a generic one, so a thrown "sent to a different email address" would reach
+ * the button as "An error occurred in the Server Components render".
+ */
+export async function acceptInviteAction(token: string): Promise<{ error: string }> {
   const session = await requireSession();
   const result = await acceptInvite(token, session.user.id, session.user.email);
   if (!result.ok) {
-    if (result.reason === "email_mismatch") {
-      throw new Error("This invite was sent to a different email address.");
-    }
-    if (result.reason === "expired") throw new Error("This invite has expired.");
-    throw new Error("Invite not found.");
+    if (result.reason === "email_mismatch") return { error: "This invite was sent to a different email address." };
+    if (result.reason === "expired") return { error: "This invite has expired." };
+    return { error: "Invite not found." };
   }
   const collection = await getCollectionById(result.collectionId);
   redirect(`/collections/${collection?.slug ?? ""}`);

@@ -13,6 +13,7 @@ import type { Item, ItemDraft } from "@/lib/api/items-client";
 import type { FieldDef } from "@/lib/fields/field-def";
 import type { LookupConfig } from "@/lib/metadata/lookup-config";
 import type { Candidate } from "@/lib/metadata/types";
+import type { TrackedFeatures } from "@/lib/collection-features";
 
 const MUTED = "color-mix(in srgb, var(--color-text) 55%, transparent)";
 const ROW_LABEL: CSSProperties = {
@@ -53,6 +54,7 @@ export function CreateItemDialog({
   collectionId,
   fields,
   lookup,
+  tracked,
 }: {
   onClose: () => void;
   onCreate: (draft: ItemDraft) => Promise<Item>;
@@ -60,6 +62,8 @@ export function CreateItemDialog({
   fields: FieldDef[];
   /** null when this collection's template has no provider, or its keys aren't set. */
   lookup: LookupConfig | null;
+  /** Hides the Verified checkbox and "Lent to" field for a collection that tracks neither. */
+  tracked: TrackedFeatures;
 }) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   // FieldCell inputs are uncontrolled, so values a lookup fills in only show up
@@ -81,6 +85,9 @@ export function CreateItemDialog({
     .map((field, index) => ({ field, index }))
     .filter(({ field, index }) => !isTitleField(index) && !isFixedColumnField(field.id));
   const titleLabel = fields[0]?.label ?? "Title";
+  // Also locks the inputs while a picked match loads. `pickCandidate` merges the
+  // preview into the draft it started with, so anything typed in the meantime
+  // would be overwritten.
   const busy = saving || applying;
 
   function reset() {
@@ -265,7 +272,7 @@ export function CreateItemDialog({
             autoFocus
             value={draft.title}
             placeholder="What are you adding?"
-            disabled={saving}
+            disabled={busy}
             onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
           />
         </div>
@@ -403,7 +410,7 @@ export function CreateItemDialog({
                     }}
                     field={field}
                     index={index}
-                    disabled={saving}
+                    disabled={busy}
                     onChange={(value) =>
                       setDraft((prev) => ({ ...prev, values: { ...prev.values, [field.id]: value } }))
                     }
@@ -415,35 +422,39 @@ export function CreateItemDialog({
         )}
 
         <div style={{ display: "grid", gap: 10, fontSize: 12.5 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={draft.verified}
-              disabled={saving}
-              onChange={(e) => setDraft((prev) => ({ ...prev, verified: e.target.checked }))}
-              style={{ accentColor: "var(--color-accent)", width: 16, height: 16 }}
-            />
-            Verified — physically confirmed
-          </label>
-          <div className="field" style={{ gap: 4 }}>
-            <label style={ROW_LABEL}>Lent to</label>
-            <input
-              className="input"
-              type="text"
-              value={draft.borrower}
-              placeholder="Nobody — in your possession"
-              disabled={saving}
-              onChange={(e) => setDraft((prev) => ({ ...prev, borrower: e.target.value }))}
-              style={{ height: 32 }}
-            />
-          </div>
+          {tracked.verified && (
+            <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={draft.verified}
+                disabled={busy}
+                onChange={(e) => setDraft((prev) => ({ ...prev, verified: e.target.checked }))}
+                style={{ accentColor: "var(--color-accent)", width: 16, height: 16 }}
+              />
+              Verified — physically confirmed
+            </label>
+          )}
+          {tracked.lending && (
+            <div className="field" style={{ gap: 4 }}>
+              <label style={ROW_LABEL}>Lent to</label>
+              <input
+                className="input"
+                type="text"
+                value={draft.borrower}
+                placeholder="Nobody — in your possession"
+                disabled={busy}
+                onChange={(e) => setDraft((prev) => ({ ...prev, borrower: e.target.value }))}
+                style={{ height: 32 }}
+              />
+            </div>
+          )}
           <div className="field" style={{ gap: 4 }}>
             <label style={ROW_LABEL}>Notes</label>
             <textarea
               className="input"
               value={draft.notes}
               placeholder="Condition, where you bought it, what's still missing from the set…"
-              disabled={saving}
+              disabled={busy}
               onChange={(e) => setDraft((prev) => ({ ...prev, notes: e.target.value }))}
               style={{ minHeight: 64, resize: "vertical", fontFamily: "var(--font-body)", lineHeight: 1.5 }}
             />

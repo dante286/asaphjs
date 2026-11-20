@@ -38,6 +38,10 @@ export async function signUpAction(
   const password = String(formData.get("password") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
   const displayName = String(formData.get("displayName") ?? "");
+  // Same hidden input as sign-in, and just as attacker-supplied. A visitor who
+  // came from an invite link creates an account here, and has to land back on
+  // the invite rather than an empty dashboard.
+  const next = safeNext(String(formData.get("next") ?? "/"));
 
   if (password !== confirmPassword) {
     return { error: "Passwords don't match." };
@@ -50,7 +54,7 @@ export async function signUpAction(
     return { error: "Sign up failed. Please try again." };
   }
 
-  redirect("/");
+  redirect(next);
 }
 
 const INVITE_GONE =

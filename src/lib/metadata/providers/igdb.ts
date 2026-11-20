@@ -30,6 +30,9 @@ const HYDRATE_FIELDS = [
 ].join(",");
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+// One token request at a time. Without it, every query that arrives while the
+// token is missing or expiring asks Twitch for its own.
+let tokenRequest: Promise<string> | null = null;
 
 export function isIgdbConfigured(): boolean {
   return Boolean(process.env.IGDB_CLIENT_ID && process.env.IGDB_CLIENT_SECRET);
@@ -37,7 +40,13 @@ export function isIgdbConfigured(): boolean {
 
 async function getAppAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
+  tokenRequest ??= requestAppAccessToken().finally(() => {
+    tokenRequest = null;
+  });
+  return tokenRequest;
+}
 
+async function requestAppAccessToken(): Promise<string> {
   const params = new URLSearchParams({
     client_id: process.env.IGDB_CLIENT_ID!,
     client_secret: process.env.IGDB_CLIENT_SECRET!,
@@ -69,12 +78,26 @@ async function igdbQuery(endpoint: string, body: string): Promise<IgdbGame[]> {
   if (!isIgdbConfigured()) throw new Error("IGDB is not configured — set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET.");
 
   return limiter.schedule(async () => {
-    const token = await getAppAccessToken();
-    const res = await fetch(`${IGDB_BASE}/${endpoint}`, {
-      method: "POST",
-      headers: { "Client-ID": process.env.IGDB_CLIENT_ID!, Authorization: `Bearer ${token}` },
-      body,
-    });
+    const send = async () => {
+      const token = await getAppAccessToken();
+      const res = await fetch(`${IGDB_BASE}/${endpoint}`, {
+        method: "POST",
+        headers: { "Client-ID": process.env.IGDB_CLIENT_ID!, Authorization: `Bearer ${token}` },
+        body,
+      });
+      return { token, res };
+    };
+
+    const first = await send();
+    let res = first.res;
+    // A Twitch app token lasts about 60 days, and the cache would otherwise
+    // keep one IGDB has stopped accepting (a rotated secret, a revoked token)
+    // until it expires, failing every lookup until a restart. Drop it and try
+    // once more with a fresh one.
+    if (res.status === 401 || res.status === 403) {
+      if (cachedToken?.value === first.token) cachedToken = null;
+      res = (await send()).res;
+    }
     if (!res.ok) throw new Error(`IGDB ${endpoint} failed: ${res.status}`);
     return res.json() as Promise<IgdbGame[]>;
   });

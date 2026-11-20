@@ -56,6 +56,7 @@ export function TableView({
   onResizeColumnEnd,
   onAutoFitColumn,
   rowCountLabel,
+  rowResets,
 }: {
   items: Item[];
   fields: FieldDef[];
@@ -73,6 +74,12 @@ export function TableView({
   onResizeColumnEnd?: (fieldId: string, width: number) => void;
   onAutoFitColumn?: (fieldId: string) => void;
   rowCountLabel: string;
+  /**
+   * Bumped per row when a save to it fails. The cells are uncontrolled, so
+   * after a failed save they'd keep showing the value that didn't save;
+   * a new key remounts them on the server's value.
+   */
+  rowResets?: Record<string, number>;
 }) {
   const isMobile = useIsMobile();
 
@@ -125,7 +132,7 @@ export function TableView({
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.id}>
+            <tr key={`${item.id}:${rowResets?.[item.id] ?? 0}`}>
               {columns.map(({ field, index }) => (
                 <td key={field.id} style={{ verticalAlign: "middle", overflow: "hidden" }}>
                   {isTitleField(index) ? (
