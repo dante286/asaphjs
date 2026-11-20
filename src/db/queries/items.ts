@@ -41,7 +41,7 @@ export type ItemPatch = Partial<{
 export type InternalItemPatch = ItemPatch &
   Partial<{ coverUrl: string | null; externalRef: ExternalRef | null }>;
 
-export type ListItemsParams = {
+type ListItemsParams = {
   collectionId: string;
   q?: string;
   verifiedOnly?: boolean;
@@ -82,7 +82,7 @@ export async function listItems(params: ListItemsParams) {
  * fixed columns and the generic `values` up front, so a new item lands complete
  * rather than as a bare title waiting to be opened and filled in.
  */
-export type NewItem = {
+type NewItem = {
   collectionId: string;
   title: string;
   values?: Record<string, unknown>;

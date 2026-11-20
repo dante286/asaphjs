@@ -8,7 +8,7 @@ import { verification } from "@/db/schema";
  * at the operator's send quota); short enough that a person who mistyped and
  * tries again isn't stuck.
  */
-export const RESET_COOLDOWN_SECONDS = 60;
+const RESET_COOLDOWN_SECONDS = 60;
 
 /** Better Auth's own prefix for these rows (`api/routes/password.mjs`). */
 const PREFIX = "reset-password:";

@@ -1,4 +1,4 @@
-import { requireSession, getSession } from "@/lib/auth/session";
+import { requireSession } from "@/lib/auth/session";
 import { requestOrigin } from "@/lib/request-origin";
 import { listCollectionsForUser } from "@/db/queries/collections";
 import { INVITE_TTL_DAYS, inviteExpired, listMembers } from "@/db/queries/members";
@@ -28,8 +28,8 @@ export default async function AccountPage({
 }) {
   const session = await requireSession();
   const { verified: verifiedParam, error: linkError, password: passwordParam } = await searchParams;
-  // additionalFields (timeZone/currency) aren't in the base Session type — re-read via getSession's raw shape.
-  const full = (await getSession())?.user as typeof session.user & {
+  // additionalFields (timeZone/currency) aren't in the base Session type; requireSession already returns them.
+  const full = session.user as typeof session.user & {
     timeZone?: string;
     currency?: string;
   };

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROVIDER_KEYS = ["igdb", "openlibrary", "tmdb", "musicbrainz", "rebrickable"] as const;
+const PROVIDER_KEYS = ["igdb", "openlibrary", "tmdb", "musicbrainz", "rebrickable"] as const;
 export const providerKeySchema = z.enum(PROVIDER_KEYS);
 export type ProviderKey = z.infer<typeof providerKeySchema>;
 

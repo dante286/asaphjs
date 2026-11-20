@@ -57,7 +57,7 @@ class FixedWindowLimiter {
 const limiters = new Map<string, FixedWindowLimiter>();
 
 /** Requests that may wait for a slot, per provider. At Open Library's one a second, a minute's worth. */
-export const DEFAULT_MAX_QUEUE = 60;
+const DEFAULT_MAX_QUEUE = 60;
 
 export function getLimiter(
   key: string,

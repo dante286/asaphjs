@@ -24,7 +24,7 @@ export function toClientItem(row: typeof items.$inferSelect): Item {
   };
 }
 
-export type ItemsQuery = {
+type ItemsQuery = {
   q?: string;
   verifiedOnly?: boolean;
   lentOnly?: boolean;

@@ -12,7 +12,7 @@ import {
   updateMemberRoleAction,
 } from "@/actions/members";
 
-export type MemberRow = {
+type MemberRow = {
   invitedEmail: string;
   role: string;
   userName: string | null;

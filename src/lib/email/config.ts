@@ -13,7 +13,7 @@
  * is now, not as it was when something first imported this file.
  */
 
-export type SmtpConfig = {
+type SmtpConfig = {
   host: string;
   port: number;
   /** Absent for an unauthenticated relay — Mailpit, or a local MTA. */
@@ -79,7 +79,7 @@ export function smtpConfig(): SmtpConfig | null {
  * to a loopback address never leaves the machine, so there's no network for
  * anyone to strip STARTTLS on.
  */
-export function isLoopbackHost(host: string): boolean {
+function isLoopbackHost(host: string): boolean {
   return /^(localhost|127\.0\.0\.1|::1|\[::1\])$/i.test(host);
 }
 
@@ -110,7 +110,7 @@ export function tlsMode(host: string, port: number): "implicit" | "starttls" | "
  * SMTP server that accepts the TCP connection and then goes quiet would
  * otherwise hold someone's "Send invite" click for minutes before failing.
  */
-export const SMTP_TIMEOUTS = {
+const SMTP_TIMEOUTS = {
   connectionTimeout: 10_000,
   greetingTimeout: 10_000,
   socketTimeout: 20_000,

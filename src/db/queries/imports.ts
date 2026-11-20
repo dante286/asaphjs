@@ -41,7 +41,7 @@ const FIXED_COLUMNS: Record<string, "verified" | "borrower" | "notes"> = {
  */
 const INSERT_CHUNK_ROWS = 500;
 
-export type CommitImportParams = {
+type CommitImportParams = {
   collectionId: string;
   fields: FieldDef[];
   mapping: ImportMappings; // csv header -> field id, or '__skip'
