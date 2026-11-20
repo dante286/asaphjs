@@ -18,8 +18,14 @@ export function ColumnMenu({
   onResetWidths: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const visibleCount = fields.length - hiddenColumns.length;
-  const countLabel = hiddenColumns.length ? `${visibleCount}/${fields.length}` : "";
+  // Only the columns the table can show: a field set not to appear in the
+  // table (Fields → "Show in table") isn't rendered whatever this menu says,
+  // so listing it here as a checked box was a toggle that did nothing.
+  const columns = fields
+    .map((field, index) => ({ field, index }))
+    .filter(({ field, index }) => isTitleField(index) || field.showInTable);
+  const hiddenCount = columns.filter(({ field }) => hiddenColumns.includes(field.id)).length;
+  const countLabel = hiddenCount ? `${columns.length - hiddenCount}/${columns.length}` : "";
 
   return (
     <div style={{ position: "relative" }}>
@@ -72,7 +78,7 @@ export function ColumnMenu({
               Visible columns
             </div>
             <div style={{ display: "grid", gap: 7 }}>
-              {fields.map((field, index) => {
+              {columns.map(({ field, index }) => {
                 const locked = isTitleField(index);
                 const visible = locked || !hiddenColumns.includes(field.id);
                 return (

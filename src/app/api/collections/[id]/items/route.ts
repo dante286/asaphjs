@@ -8,6 +8,7 @@ import { ITEM_BODY_MAX_BYTES, itemBorrower, itemNotes, itemTitle, itemValues } f
 import { getProvider } from "@/lib/metadata/providers";
 import { resolveLookupConfig } from "@/lib/metadata/lookup-config";
 import { mirrorCover } from "@/lib/metadata/cover-mirror";
+import { deleteUpload } from "@/lib/uploads/files";
 import type { ExternalRef } from "@/types";
 
 /**
@@ -100,6 +101,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   }
 
-  const item = await createItem({ collectionId: id, ...draft, coverUrl, externalRef });
+  let item: Awaited<ReturnType<typeof createItem>>;
+  try {
+    item = await createItem({ collectionId: id, ...draft, coverUrl, externalRef });
+  } catch (err) {
+    // A mirrored cover is a file nothing references until this row exists.
+    await deleteUpload(coverUrl);
+    throw err;
+  }
   return NextResponse.json(item, { status: 201 });
 }

@@ -1,4 +1,5 @@
 import { getLimiter } from "../rate-limiter";
+import { providerTimeoutSignal } from "../provider-timeout";
 import type { Candidate, HydratedFields, MetadataProvider } from "../types";
 
 const UA = process.env.METADATA_USER_AGENT ?? "AsaphJS/0.1 (set METADATA_USER_AGENT)";
@@ -30,7 +31,7 @@ export type OpenLibraryWork = {
 
 async function getJson<T>(path: string): Promise<T | null> {
   return limiter.schedule(async () => {
-    const res = await fetch(`${BASE}${path}`, { headers: { "User-Agent": UA } });
+    const res = await fetch(`${BASE}${path}`, { headers: { "User-Agent": UA }, signal: providerTimeoutSignal() });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`OpenLibrary ${path} failed: ${res.status}`);
     return res.json() as Promise<T>;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPatchForField, getFieldValue, isFixedColumnField, isTitleField } from "./item-values";
+import { buildPatchForField, getFieldValue, isFixedColumnField, isTitleField, parseTags } from "./item-values";
 import { field, item } from "@/test/factories";
 
 describe("isTitleField", () => {
@@ -102,5 +102,27 @@ describe("buildPatchForField", () => {
     expect(buildPatchForField(field({ id: "console" }), 1, null)).toEqual({
       values: { console: null },
     });
+  });
+
+  it.each([[""], [[]]])("turns a cleared value (%j) into a key delete rather than storing it", (value) => {
+    expect(buildPatchForField(field({ id: "console", type: "select" }), 1, value)).toEqual({
+      values: { console: null },
+    });
+  });
+
+  it("stores a tag list as an array", () => {
+    expect(buildPatchForField(field({ id: "genre", type: "tags" }), 1, ["RPG", "Action"])).toEqual({
+      values: { genre: ["RPG", "Action"] },
+    });
+  });
+});
+
+describe("parseTags", () => {
+  it("splits on commas and trims", () => {
+    expect(parseTags("RPG, Action ,,Puzzle")).toEqual(["RPG", "Action", "Puzzle"]);
+  });
+
+  it("is null when nothing is left", () => {
+    expect(parseTags(" , ")).toBeNull();
   });
 });

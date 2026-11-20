@@ -45,6 +45,15 @@ export type ItemPatch = Partial<{
 export type InternalItemPatch = ItemPatch &
   Partial<{ coverUrl: string | null; externalRef: ExternalRef | null }>;
 
+/**
+ * Makes a search string match literally under (I)LIKE: `%` and `_` are
+ * wildcards there, so a search for `_` would otherwise match every title.
+ * Postgres's default escape character is the backslash.
+ */
+export function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export type ListItemsParams = {
   collectionId: string;
   q?: string;
@@ -60,7 +69,7 @@ export async function listItems(params: ListItemsParams) {
   const page = params.page ?? 1;
 
   const conditions = [eq(items.collectionId, params.collectionId)];
-  if (params.q) conditions.push(ilike(items.title, `%${params.q}%`));
+  if (params.q) conditions.push(ilike(items.title, `%${escapeLike(params.q)}%`));
   if (params.verifiedOnly) conditions.push(eq(items.verified, true));
   if (params.lentOnly) conditions.push(isNotNull(items.borrower));
 
@@ -117,7 +126,16 @@ export async function createItem(params: NewItem) {
 }
 
 export type PatchResult =
-  | { ok: true; item: typeof items.$inferSelect }
+  | {
+      ok: true;
+      item: typeof items.$inferSelect;
+      /**
+       * The cover the row had before this write, read under the row lock — what
+       * a caller that replaced the cover should release. A copy read before the
+       * call can be stale if another write landed in between.
+       */
+      previousCoverUrl: string | null;
+    }
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "conflict"; current: typeof items.$inferSelect };
 
@@ -177,7 +195,7 @@ export async function patchItem(
       .where(inCollection)
       .returning();
 
-    return { ok: true, item: updated };
+    return { ok: true, item: updated, previousCoverUrl: current.coverUrl };
   });
 }
 

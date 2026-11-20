@@ -14,6 +14,13 @@ describe("csvCell", () => {
     );
   });
 
+  it("defuses a tag list whose first tag is a formula", () => {
+    expect(csvCell(['=HYPERLINK("https://evil.example")', "RPG"])).toBe(
+      '"\'=HYPERLINK(""https://evil.example""),RPG"',
+    );
+    expect(csvCell(["RPG", "Action"])).toBe('"RPG,Action"');
+  });
+
   it("leaves numbers alone, as numbers or as text", () => {
     expect(csvCell(-5)).toBe("-5");
     expect(csvCell("-5")).toBe("-5");

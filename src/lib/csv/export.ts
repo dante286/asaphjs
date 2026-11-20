@@ -16,7 +16,7 @@ const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
 const PLAIN_NUMBER = /^[+-]?\d+(\.\d+)?$/;
 
 /**
- * One cell. A text value that a spreadsheet would read as a formula gets a
+ * One cell. A value whose text a spreadsheet would read as a formula gets a
  * leading `'`, which spreadsheets show as text rather than running; the OWASP
  * recommendation. The cost is that the apostrophe survives a reimport, which is
  * the right way round for a file whose job is to be opened. Numbers, and text
@@ -27,7 +27,9 @@ const PLAIN_NUMBER = /^[+-]?\d+(\.\d+)?$/;
  */
 export function csvCell(value: unknown): string {
   let text = value === null || value === undefined ? "" : String(value);
-  if (typeof value === "string" && FORMULA_TRIGGER.test(text) && !PLAIN_NUMBER.test(text)) text = `'${text}`;
+  // Checked on the text, whatever the value was: a tag array stringifies to
+  // its first tag, which can be `=HYPERLINK(…)` as easily as a title can.
+  if (FORMULA_TRIGGER.test(text) && !PLAIN_NUMBER.test(text)) text = `'${text}`;
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

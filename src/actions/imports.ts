@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/auth/session";
 import { fieldDefSchema } from "@/lib/fields/field-def";
 import { createCollection } from "@/db/queries/collections";
 import { commitImport, rollbackImportBatch } from "@/db/queries/imports";
-import { updateCollectionFields, updateCollectionSettings } from "@/db/queries/collections";
+import { updateCollectionSettings } from "@/db/queries/collections";
 import { resolveRole } from "@/db/queries/members";
 import { MAX_CSV_BYTES, csvTooLargeMessage } from "@/lib/csv/limits";
 import { csvByteSize, fromCsvPayload, type CsvPayload } from "@/lib/csv/payload";
@@ -82,13 +82,15 @@ export async function importCsvIntoCollectionAction(input: {
   if ("error" in parsed) return parsed;
   const { rows } = parsed;
 
-  // An import only ever adds fields. If this list was loaded before someone
-  // else added one, it's missing that field, so don't treat the gap as a
-  // removal and wipe that field's values.
-  await updateCollectionFields(input.collectionId, fields, { dropRemovedValues: false });
+  // An import only ever adds fields, and commitImport adds them to the
+  // collection's current list inside the rows' transaction: this list was
+  // loaded when the page rendered, so writing it back whole would undo field
+  // edits made since, and writing it first would keep the fields even if the
+  // rows then failed.
+  const result = await commitImport({ collectionId: input.collectionId, fields, mapping, rows, addNewFields: true });
+  // Only once the rows are in, so a failed import doesn't remember its mapping.
   await updateCollectionSettings(input.collectionId, { importMappings: mapping });
-
-  return commitImport({ collectionId: input.collectionId, fields, mapping, rows });
+  return result;
 }
 
 export async function rollbackImportBatchAction(collectionId: string, batchId: string) {

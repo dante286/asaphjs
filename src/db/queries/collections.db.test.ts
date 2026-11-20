@@ -226,6 +226,9 @@ describe("listCollectionsForUser", () => {
       itemCount: 3,
       verifiedCount: 2,
       lentCount: 2,
+      // Super Metroid, in both counts above — what keeps the card's bar from
+      // drawing it twice.
+      verifiedLentCount: 1,
     });
   });
 

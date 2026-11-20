@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Blueprint } from "@/components/ui/Blueprint";
 
 export function TopNav({ userName }: { userName: string }) {
   return (
@@ -39,41 +38,6 @@ export function TopNav({ userName }: { userName: string }) {
         Settings
       </Link>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-        <Blueprint
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "6px 10px",
-            minWidth: "min(240px,42vw)",
-          }}
-        >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            style={{ opacity: 0.55 }}
-          >
-            <circle cx="11" cy="11" r="7"></circle>
-            <path d="m20 20-3.5-3.5"></path>
-          </svg>
-          <input
-            type="text"
-            placeholder="Search all items"
-            style={{
-              border: 0,
-              background: "transparent",
-              font: "inherit",
-              fontSize: 13,
-              width: "100%",
-              outline: "none",
-              color: "inherit",
-            }}
-          />
-        </Blueprint>
         <Link href="/account" className="btn btn-secondary" style={{ gap: 8 }}>
           <svg
             width="15"

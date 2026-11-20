@@ -116,6 +116,18 @@ export async function inviteMember(params: {
   return existing;
 }
 
+/** Whether `invitedEmail` has already accepted an invite to this collection. */
+export async function isAcceptedMember(collectionId: string, invitedEmail: string): Promise<boolean> {
+  const member = await db.query.collectionMembers.findFirst({
+    columns: { acceptedAt: true },
+    where: and(
+      eq(collectionMembers.collectionId, collectionId),
+      eq(collectionMembers.invitedEmail, invitedEmail.toLowerCase()),
+    ),
+  });
+  return Boolean(member?.acceptedAt);
+}
+
 export async function updateMemberRole(
   collectionId: string,
   invitedEmail: string,
@@ -155,15 +167,22 @@ export async function acceptInvite(token: string, acceptingUserId: string, accep
     return { ok: false as const, reason: "expired" as const };
   }
 
-  await db
+  // Matched on the token again, not just the row's key: if the invite was
+  // removed since the read above, there is nothing to accept, and if it was
+  // re-sent, this link is the superseded one — accepting through it would
+  // have wiped the new token. Either way no row matches.
+  const accepted = await db
     .update(collectionMembers)
     .set({ userId: acceptingUserId, acceptedAt: new Date(), inviteToken: null })
     .where(
       and(
         eq(collectionMembers.collectionId, invite.collectionId),
         eq(collectionMembers.invitedEmail, invite.invitedEmail),
+        eq(collectionMembers.inviteToken, token),
       ),
-    );
+    )
+    .returning({ collectionId: collectionMembers.collectionId });
+  if (accepted.length === 0) return { ok: false as const, reason: "not_found" as const };
 
   return { ok: true as const, collectionId: invite.collectionId };
 }

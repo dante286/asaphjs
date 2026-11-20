@@ -115,6 +115,16 @@ describe("commitImport", () => {
     expect(item.values.copies).toBeNull();
   });
 
+  it("reports a cell it couldn't read as its type, and still imports the row", async () => {
+    const result = await commit([{ Title: "Chrono Trigger", Copies: "two", Boxed: "maybe" }]);
+
+    expect(result.inserted).toBe(1);
+    expect(result.errors).toEqual([
+      { row: 1, message: 'Copies: "two" isn\'t a number — left blank.' },
+      { row: 1, message: 'Boxed: "maybe" isn\'t yes or no — read as no.' },
+    ]);
+  });
+
   it("stores a date as YYYY-MM-DD, and keeps a spelling it can't read as written", async () => {
     // A date input only shows ISO dates; "03/14/2021" stored as typed rendered blank.
     const fields: FieldDef[] = [...FIELDS, { id: "released", label: "Released", type: "date", order: 8, origin: "csv" }];

@@ -50,13 +50,22 @@ export function ImportWizard({
     setChoices(initial);
   }
 
-  const finalFields = useMemo(() => {
-    if (!csv) return existingFields;
+  // The new fields, and which header each one came from. Ids are made unique
+  // here: "Price ($)" and "Price (€)" both slugify to `price`, and a column
+  // whose slug matched an existing field used to get no field at all and be
+  // skipped without a word.
+  const { finalFields, newFieldIdByHeader } = useMemo(() => {
+    const byHeader = new Map<string, string>();
+    if (!csv) return { finalFields: existingFields, newFieldIdByHeader: byHeader };
     const fields = [...existingFields];
+    const taken = new Set(fields.map((f) => f.id));
     for (const header of csv.headers) {
       if (choices[header] !== NEW) continue;
-      const id = slugifyFieldLabel(header);
-      if (fields.some((f) => f.id === id)) continue;
+      const base = slugifyFieldLabel(header);
+      let id = base;
+      for (let n = 2; taken.has(id); n++) id = `${base}_${n}`;
+      taken.add(id);
+      byHeader.set(header, id);
       // All rows, not a sample: a select needs every value as an option.
       const { type, options } = guessColumn(csv.rows.map((r) => r[header] ?? ""));
       fields.push({
@@ -69,7 +78,7 @@ export function ImportWizard({
         showInTable: true,
       });
     }
-    return fields;
+    return { finalFields: fields, newFieldIdByHeader: byHeader };
   }, [csv, choices, existingFields]);
 
   function commit() {
@@ -78,10 +87,7 @@ export function ImportWizard({
     const mapping = Object.fromEntries(
       csv.headers.map((header) => {
         const choice = choices[header];
-        if (choice === NEW) {
-          const field = finalFields.find((f) => f.label === header && f.origin === "csv");
-          return [header, field?.id ?? SKIP];
-        }
+        if (choice === NEW) return [header, newFieldIdByHeader.get(header) ?? SKIP];
         return [header, choice];
       }),
     );
@@ -113,8 +119,14 @@ export function ImportWizard({
 
   function rollback() {
     if (!result) return;
+    setError(null);
     startTransition(async () => {
-      await rollbackImportBatchAction(collectionId, result.batchId);
+      try {
+        await rollbackImportBatchAction(collectionId, result.batchId);
+      } catch {
+        setError("Couldn't undo the import. Try again.");
+        return;
+      }
       void markItemsStale(queryClient, collectionId);
       setResult(null);
       setCsv(null);
@@ -130,16 +142,19 @@ export function ImportWizard({
         </div>
         {result.errors.length > 0 && (
           <div style={{ fontSize: 13, marginBottom: 10 }}>
-            {result.errors.length} row{result.errors.length === 1 ? "" : "s"} skipped:
+            {result.errors.length} problem{result.errors.length === 1 ? "" : "s"}:
             <ul>
-              {result.errors.slice(0, 10).map((e) => (
-                <li key={e.row}>
+              {result.errors.slice(0, 10).map((e, i) => (
+                // One row can report several cells.
+                <li key={i}>
                   Row {e.row}: {e.message}
                 </li>
               ))}
             </ul>
+            {result.errors.length > 10 && <div>…and {result.errors.length - 10} more.</div>}
           </div>
         )}
+        {error && <div style={{ marginBottom: 10, fontSize: 12.5, color: "#b5544a" }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-primary" onClick={() => router.push(`/collections/${collectionSlug}`)} type="button">
             View collection

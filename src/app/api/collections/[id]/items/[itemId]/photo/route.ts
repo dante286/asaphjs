@@ -55,16 +55,25 @@ export async function POST(
     );
   }
 
-  const result = await patchItem(id, itemId, { coverUrl: saved }, request.headers.get("if-match") ?? undefined);
+  let result: PatchResult;
+  try {
+    result = await patchItem(id, itemId, { coverUrl: saved }, request.headers.get("if-match") ?? undefined);
+  } catch (err) {
+    // Nothing points at the new file yet, so it must not outlive the failure.
+    await deleteUpload(saved);
+    throw err;
+  }
   if (!result.ok) {
     // The row moved out from under us — don't leave the bytes orphaned on disk.
     await deleteUpload(saved);
     return patchFailure(result);
   }
 
-  // No-op unless the previous cover was itself an upload (provider URLs are left
-  // alone), and kept if another item still shows it.
-  await releaseUploads([item.coverUrl]);
+  // The cover the row held at the moment of the write, not the one read above:
+  // two uploads without If-Match would otherwise both release the same old
+  // file and orphan whichever new one lost the race. No-op unless that cover
+  // was itself an upload, and kept if another item still shows it.
+  await releaseUploads([result.previousCoverUrl]);
   return NextResponse.json(result.item);
 }
 
@@ -84,6 +93,6 @@ export async function DELETE(
   const result = await patchItem(id, itemId, { coverUrl: null }, request.headers.get("if-match") ?? undefined);
   if (!result.ok) return patchFailure(result);
 
-  await releaseUploads([item.coverUrl]);
+  await releaseUploads([result.previousCoverUrl]);
   return NextResponse.json(result.item);
 }

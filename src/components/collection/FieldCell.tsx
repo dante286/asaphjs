@@ -1,6 +1,6 @@
 import type { FieldDef } from "@/lib/fields/field-def";
 import { toIsoDate } from "@/lib/fields/dates";
-import { getFieldValue, type ItemLike } from "@/lib/fields/item-values";
+import { getFieldValue, parseTags, type ItemLike } from "@/lib/fields/item-values";
 
 // The per-field-type input renderer shared by the table view and the item
 // detail page, so checkbox/select/date/number/text behavior can't drift
@@ -38,7 +38,8 @@ export function FieldCell({
         className="input"
         defaultValue={String(value ?? "")}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+        // The blank option clears the field rather than storing "".
+        onChange={(e) => onChange(e.target.value || null)}
         style={{ border: "1px solid transparent", background: "transparent", fontSize: 13.5, padding: "4px 6px" }}
       >
         <option value="" />
@@ -78,12 +79,18 @@ export function FieldCell({
     );
   }
 
+  // Tags are stored as an array and edited as comma-separated text, split the
+  // same way an import splits them — saving the raw text would turn
+  // ["RPG", "Action"] into the string "RPG, Action".
+  const isTags = field.type === "tags";
+  const text = value === null || value === undefined ? "" : Array.isArray(value) ? value.join(", ") : String(value);
+
   return (
     <input
       type="text"
-      defaultValue={value === null || value === undefined ? "" : String(value)}
+      defaultValue={text}
       disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => onChange(isTags ? parseTags(e.target.value) : e.target.value)}
       style={{
         border: "1px solid transparent",
         background: "transparent",

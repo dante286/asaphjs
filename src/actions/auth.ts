@@ -10,6 +10,15 @@ import { safeNext } from "@/lib/auth/safe-next";
 
 export type AuthActionState = { error?: string } | undefined;
 
+/**
+ * The "Keep me signed in" checkbox. An unchecked box isn't submitted at all, so
+ * absence means no: Better Auth then issues a browser-session cookie and a
+ * one-day session instead of the 30-day one.
+ */
+function rememberMe(formData: FormData): boolean {
+  return formData.get("rememberMe") === "on";
+}
+
 export async function signInAction(
   _prevState: AuthActionState,
   formData: FormData,
@@ -21,7 +30,7 @@ export async function signInAction(
   const next = safeNext(String(formData.get("next") ?? "/"));
 
   try {
-    await auth.api.signInEmail({ body: { email, password }, headers: await headers() });
+    await auth.api.signInEmail({ body: { email, password, rememberMe: rememberMe(formData) }, headers: await headers() });
   } catch (err) {
     if (err instanceof APIError) return { error: err.message };
     return { error: "Sign in failed. Please try again." };
@@ -48,7 +57,10 @@ export async function signUpAction(
   }
 
   try {
-    await auth.api.signUpEmail({ body: { email, password, name: displayName || email }, headers: await headers() });
+    await auth.api.signUpEmail({
+      body: { email, password, name: displayName || email, rememberMe: rememberMe(formData) },
+      headers: await headers(),
+    });
   } catch (err) {
     if (err instanceof APIError) return { error: err.message };
     return { error: "Sign up failed. Please try again." };

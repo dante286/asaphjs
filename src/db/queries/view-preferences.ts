@@ -26,25 +26,28 @@ export async function upsertViewPreferences(
   collectionId: string,
   patch: ViewPrefsPatch,
 ) {
-  const existing = await getViewPreferences(userId, collectionId);
+  const entries = Object.entries(patch.columnWidths ?? {});
+  const merge = Object.fromEntries(entries.filter(([, width]) => width !== null)) as Record<string, number>;
+  const remove = entries.filter(([, width]) => width === null).map(([colId]) => colId);
 
-  const columnWidths: Record<string, number> = patch.resetColumnWidths ? {} : { ...existing.columnWidths };
-  if (patch.columnWidths) {
-    for (const [colId, width] of Object.entries(patch.columnWidths)) {
-      if (width === null) delete columnWidths[colId];
-      else columnWidths[colId] = width;
-    }
-  }
-  const hiddenColumns = patch.hiddenColumns ?? existing.hiddenColumns;
+  // Merged in the database rather than read, merged here, and written back:
+  // two resizes landing together would each write the widths they read, and
+  // the later write would drop the earlier one's column.
+  const base = patch.resetColumnWidths ? sql`'{}'::jsonb` : sql`${viewPreferences.columnWidths}`;
+  const columnWidths = sql`(${base} || ${JSON.stringify(merge)}::jsonb) - ${sql.param(remove)}::text[]`;
 
   const [row] = await db
     .insert(viewPreferences)
-    .values({ userId, collectionId, columnWidths, hiddenColumns })
+    .values({ userId, collectionId, columnWidths: merge, hiddenColumns: patch.hiddenColumns ?? [] })
     .onConflictDoUpdate({
       target: [viewPreferences.userId, viewPreferences.collectionId],
       // Database clock, as everywhere else this column is written — see the
       // note on `touchedNow` in collections.ts.
-      set: { columnWidths, hiddenColumns, updatedAt: sql`now()` },
+      set: {
+        columnWidths: columnWidths as unknown as Record<string, number>,
+        ...(patch.hiddenColumns ? { hiddenColumns: patch.hiddenColumns } : {}),
+        updatedAt: sql`now()`,
+      },
     })
     .returning();
 
