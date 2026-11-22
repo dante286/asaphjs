@@ -49,7 +49,6 @@ by `updateCollectionSettings()`. Putting them there means the next caller can't 
 | `collection_members` | Invites and memberships: address, role, invite token, inviter, accepted-at |
 | `import_batches` | One per CSV import, which is what "Undo this import" rolls back |
 | `view_preferences` | Per-user column widths and hidden columns, per collection |
-| `lookup_lists`, `lookup_values` | Option lists for select fields (consoles, regions). In the schema, but nothing reads them yet |
 | `metadata_cache`, `metadata_search_cache` | Provider responses by source id and by normalized query |
 | `user`, `session`, `account`, `verification` | Better Auth's own tables |
 

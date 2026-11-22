@@ -34,6 +34,11 @@ export function FieldsEditor({
     setSaved(false);
   }
 
+  function togglePrivate(id: string) {
+    setFields((prev) => prev.map((f) => (f.id === id ? { ...f, private: !f.private } : f)));
+    setSaved(false);
+  }
+
   function addField() {
     if (!draftName.trim()) return;
     const id = slugifyFieldLabel(draftName);
@@ -78,7 +83,7 @@ export function FieldsEditor({
             key={f.id}
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr auto auto auto",
+              gridTemplateColumns: "1fr auto auto auto auto",
               alignItems: "center",
               gap: 10,
               padding: "8px 0",
@@ -99,6 +104,17 @@ export function FieldsEditor({
               <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
                 <input type="checkbox" checked={Boolean(f.showInTable)} onChange={() => toggleShowInTable(f.id)} />
                 In table
+              </label>
+            )}
+            {index === 0 ? (
+              <span />
+            ) : (
+              <label
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}
+                title="Left off the public link"
+              >
+                <input type="checkbox" checked={Boolean(f.private)} onChange={() => togglePrivate(f.id)} />
+                Private
               </label>
             )}
             {index === 0 ? (

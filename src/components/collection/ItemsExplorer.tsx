@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Blueprint } from "@/components/ui/Blueprint";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SaveStatusIndicator, type SaveStatus } from "@/components/collection/SaveStatusIndicator";
@@ -33,7 +33,7 @@ import {
   totalOf,
   type ItemsPages,
 } from "@/lib/api/items-pages";
-import { fetchViewPrefs, saveViewPrefs, type ViewPrefs } from "@/lib/api/view-prefs-client";
+import { saveViewPrefs, type ViewPrefs } from "@/lib/api/view-prefs-client";
 import { itemsQueryPrefix, markItemsStale } from "@/lib/api/items-cache";
 import { buildPatchForField } from "@/lib/fields/item-values";
 import type { FieldDef } from "@/lib/fields/field-def";
@@ -78,14 +78,6 @@ export function ItemsExplorer({
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(initialViewPrefs.columnWidths);
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(initialViewPrefs.hiddenColumns);
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-
-  const viewPrefsQueryKey = ["view-prefs", collectionId] as const;
-  useQuery({
-    queryKey: viewPrefsQueryKey,
-    queryFn: () => fetchViewPrefs(collectionId),
-    initialData: initialViewPrefs,
-    staleTime: Infinity,
-  });
 
   const viewPrefsMutation = useMutation({
     mutationFn: (patch: Parameters<typeof saveViewPrefs>[1]) => saveViewPrefs(collectionId, patch),

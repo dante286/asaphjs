@@ -23,7 +23,7 @@ const TITLE_CELL: CSSProperties = {
   color: "inherit",
 };
 
-export function defaultColumnWidth(index: number): number {
+function defaultColumnWidth(index: number): number {
   return index === 0 ? 230 : 132;
 }
 

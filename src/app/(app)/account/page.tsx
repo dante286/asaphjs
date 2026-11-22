@@ -1,4 +1,4 @@
-import { requireSession, getSession } from "@/lib/auth/session";
+import { requireSession } from "@/lib/auth/session";
 import { requestOrigin } from "@/lib/request-origin";
 import { listCollectionsForUser } from "@/db/queries/collections";
 import { INVITE_TTL_DAYS, inviteExpired, listMembers } from "@/db/queries/members";
@@ -28,11 +28,6 @@ export default async function AccountPage({
 }) {
   const session = await requireSession();
   const { verified: verifiedParam, error: linkError, password: passwordParam } = await searchParams;
-  // additionalFields (timeZone/currency) aren't in the base Session type — re-read via getSession's raw shape.
-  const full = (await getSession())?.user as typeof session.user & {
-    timeZone?: string;
-    currency?: string;
-  };
 
   // Only asked for where it can be given; see `emailVerificationAvailable`.
   const verification = emailVerificationAvailable()
@@ -68,8 +63,8 @@ export default async function AccountPage({
       <ProfileForm
         displayName={session.user.name}
         email={session.user.email}
-        timeZone={full?.timeZone ?? "UTC"}
-        currency={full?.currency ?? "USD"}
+        timeZone={session.user.timeZone ?? "UTC"}
+        currency={session.user.currency ?? "USD"}
       />
 
       {verification && <EmailVerificationCard email={session.user.email} status={verification} />}

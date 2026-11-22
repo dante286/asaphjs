@@ -155,7 +155,6 @@ export const openLibraryProvider: MetadataProvider = {
       year: doc?.first_publish_year,
       summary: descriptionText(work.description),
       coverUrl: coverUrlFor(work.covers?.find((id) => id > 0) ?? doc?.cover_i),
-      sourceUrl: `${BASE}${sourceId}`,
     };
   },
 };

@@ -27,7 +27,6 @@ const HYDRATE_FIELDS = [
   "franchises.name",
   "collections.name",
   "cover.url",
-  "url",
 ].join(",");
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
@@ -65,7 +64,6 @@ export type IgdbGame = {
   id: number;
   name?: string;
   summary?: string;
-  url?: string;
   first_release_date?: number;
   cover?: { url?: string };
   platforms?: Array<{ name?: string; abbreviation?: string }>;
@@ -188,7 +186,6 @@ export const igdbProvider: MetadataProvider = {
       year: yearOf(game),
       summary: game.summary,
       coverUrl: coverUrlOf(game),
-      sourceUrl: game.url,
     };
   },
 };

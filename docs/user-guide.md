@@ -56,7 +56,8 @@ already made.
 Add and remove fields, and choose which ones appear as table columns, on the collection's
 Fields page. A field can be
 text, long text, a number, a checkbox, a date, a select from a list of options, tags, a
-currency amount, a URL, a rating, or an image.
+currency amount, a URL, a rating, or an image. Tick **Private** on a field to leave it off the
+collection's [public link](#public-link).
 
 ### Its address
 
@@ -188,7 +189,8 @@ Inviting someone who already accepted changes nothing.
 ### Public link
 
 Tick **Public link** to get a `/s/<token>` address that anyone can open without signing in.
-It's read-only, and it **leaves out who an item is lent to, and your Comments**.
+It's read-only, and it **leaves out who an item is lent to, your Comments, and any field you
+marked Private** on the Fields page.
 
 Two controls, and the difference matters:
 

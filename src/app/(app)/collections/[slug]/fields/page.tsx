@@ -37,7 +37,7 @@ export default async function FieldsPage({ params }: { params: Promise<{ slug: s
       <h1 style={{ fontSize: "clamp(32px,4.6vw,44px)", margin: "0 0 4px" }}>Fields</h1>
       <p style={{ fontSize: 14, color: "color-mix(in srgb, var(--color-text) 65%, transparent)", maxWidth: "62ch" }}>
         Rename, add, or remove fields. Removing a field drops it from every item&rsquo;s stored
-        values.
+        values. Private fields are left off the collection&rsquo;s public link.
       </p>
 
       <FieldsEditor collectionId={collection.id} collectionSlug={collection.slug} initialFields={collection.fields} />

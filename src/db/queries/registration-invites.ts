@@ -36,7 +36,7 @@ export function normalizeInviteEmail(email: string): string {
  * can move the clock. It agrees with `inviteExpired()`: expired is strictly
  * older than the TTL, so an invite exactly at it is still pending.
  */
-export function pendingInvite(now = Date.now()): SQL {
+function pendingInvite(now = Date.now()): SQL {
   const cutoff = new Date(now - INVITE_TTL_MS);
   return and(
     isNotNull(registrationInvites.token),
@@ -75,7 +75,7 @@ export async function markInviteUsed(token: string, email: string, now = new Dat
     );
 }
 
-export type InviteToRegisterResult =
+type InviteToRegisterResult =
   | { ok: true; invite: typeof registrationInvites.$inferSelect & { token: string } }
   | { ok: false; reason: "has_account" | "already_invited" | "cap" }
   | { ok: false; reason: "cooldown"; secondsLeft: number };
@@ -136,6 +136,10 @@ export async function inviteToRegister(params: {
         target: registrationInvites.email,
         set: { token, invitedBy: me, sentAt, sendFailedAt: null },
         setWhere: and(
+          // Not dead after the delete above: `markInviteUsed` runs once a
+          // sign-up commits, outside this inviter's lock, so an invite can be
+          // used between that delete and this upsert. Re-arming it would
+          // invite an address that now has an account.
           isNull(registrationInvites.usedAt),
           // Yours, or nobody's to lose: revoked, expired, or sent by someone
           // who has since deleted their account. Taking over someone else's
@@ -157,6 +161,7 @@ export async function inviteToRegister(params: {
 
     // Nothing written: say which rule held it back.
     const existing = await tx.query.registrationInvites.findFirst({ where: eq(registrationInvites.email, email) });
+    // `usedAt` here is the race described at the upsert's `setWhere`.
     if (!existing || existing.usedAt) return { ok: false, reason: "has_account" };
     const othersPending =
       existing.invitedBy !== me &&

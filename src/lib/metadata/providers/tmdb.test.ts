@@ -196,7 +196,6 @@ describe("tmdbProvider.hydrate", () => {
       year: 1999,
       summary: TMDB_MATRIX.overview.trim(),
       coverUrl: "https://image.tmdb.org/t/p/w500/p96dm7sCMn4VYAStA6siNz30G1r.jpg",
-      sourceUrl: "https://www.themoviedb.org/movie/603",
     });
   });
 
@@ -212,7 +211,6 @@ describe("tmdbProvider.hydrate", () => {
       year: 2008,
       summary: TMDB_BREAKING_BAD.overview,
       coverUrl: "https://image.tmdb.org/t/p/w500/ggFHVNu6YYI5L9pCfOacjizRGt.jpg",
-      sourceUrl: "https://www.themoviedb.org/tv/1396",
     });
   });
 
@@ -244,7 +242,6 @@ describe("tmdbProvider.hydrate", () => {
       year: undefined,
       summary: undefined,
       coverUrl: undefined,
-      sourceUrl: "https://www.themoviedb.org/movie/1244944",
     });
   });
 
