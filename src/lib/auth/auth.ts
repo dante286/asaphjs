@@ -222,5 +222,3 @@ export const auth = betterAuth({
   // Must be the last plugin — lets Server Actions set session cookies directly.
   plugins: [nextCookies()],
 });
-
-export type Session = typeof auth.$Infer.Session;

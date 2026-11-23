@@ -52,7 +52,6 @@ export function AuthForm({
   if (allowReset && forgot) {
     return (
       <Blueprint
-        className="elev-none"
         style={{ padding: "clamp(20px,3vw,32px)", background: "var(--color-surface)" }}
       >
         <div style={{ fontSize: 15, fontWeight: 600 }}>Reset your password</div>
@@ -83,7 +82,6 @@ export function AuthForm({
 
   return (
     <Blueprint
-      className="elev-none"
       style={{ padding: "clamp(20px,3vw,32px)", background: "var(--color-surface)" }}
     >
       {allowSignups ? (

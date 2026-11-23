@@ -216,16 +216,19 @@ describe("updateCollectionSettingsAction", () => {
     expect(await getCollectionById(collectionId)).toMatchObject({ shareEnabled: false, shareToken: null });
   });
 
-  it("takes the settings a form does send", async () => {
+  it("takes the name, and nothing else a client sends", async () => {
+    const before = await getCollectionById(collectionId);
     const result = await actions.updateCollectionSettingsAction(collectionId, {
+      name: "Games",
       defaultView: "table",
       features: { lending: true, lookup: "openlibrary" },
-    });
+    } as unknown as { name: string });
 
-    expect(result.slug).toBe("video-games");
+    expect(result.name).toBe("Games");
     expect(await getCollectionById(collectionId)).toMatchObject({
-      defaultView: "table",
-      features: { lending: true, lookup: "openlibrary" },
+      name: "Games",
+      defaultView: before!.defaultView,
+      features: before!.features,
     });
   });
 });

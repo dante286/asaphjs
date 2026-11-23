@@ -14,7 +14,7 @@ export const FIELD_TYPES = [
   "image",
 ] as const;
 
-export const fieldTypeSchema = z.enum(FIELD_TYPES);
+const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
 
 // Human-readable template labels (from the prototype's mock data) mapped to
@@ -37,8 +37,6 @@ export const fieldDefSchema = z.object({
   id: z.string(),
   label: z.string(),
   type: fieldTypeSchema,
-  required: z.boolean().optional(),
-  lookupListId: z.string().optional(),
   options: z.array(z.string()).optional(),
   currency: z.string().optional(),
   showInTable: z.boolean().optional(),

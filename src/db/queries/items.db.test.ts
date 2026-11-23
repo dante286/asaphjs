@@ -92,12 +92,6 @@ describe("listItems", () => {
     expect(total).toBe(3);
   });
 
-  it("orders by recency when asked", async () => {
-    const { rows } = await listItems({ collectionId, sort: "updated" });
-
-    expect(rows.map((r) => r.title)).toEqual(["Super Metroid", "earthbound", "Chrono Trigger"]);
-  });
-
   it("searches titles case-insensitively, anywhere in the string", async () => {
     const { rows, total } = await listItems({ collectionId, q: "TRIG" });
 

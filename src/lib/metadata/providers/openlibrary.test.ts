@@ -126,7 +126,6 @@ describe("openLibraryProvider.hydrate", () => {
       // The work's own covers array leads with -1; this is the second entry,
       // not the placeholder and not the doc's copy.
       coverUrl: "https://covers.openlibrary.org/b/id/12547191-L.jpg",
-      sourceUrl: "https://openlibrary.org/works/OL21177745W",
     });
   });
 
@@ -257,7 +256,6 @@ describe("openLibraryProvider.hydrate", () => {
       year: undefined,
       summary: undefined,
       coverUrl: undefined,
-      sourceUrl: "https://openlibrary.org/works/OL21177745W",
     });
   });
 

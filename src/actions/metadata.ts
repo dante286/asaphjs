@@ -147,7 +147,7 @@ export async function clearLookupMatchAction(input: {
   return toClientItem(result.item);
 }
 
-export type LookupDraftPreview = {
+type LookupDraftPreview = {
   /** The provider's own title, for a draft that doesn't have one typed yet. */
   title: string | null;
   values: Record<string, unknown>;

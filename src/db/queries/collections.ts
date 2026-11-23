@@ -90,13 +90,6 @@ export async function getCollectionForUser(userId: string, slug: string) {
   return row?.collection ?? null;
 }
 
-export async function listOwnedCollections(userId: string) {
-  return db.query.collections.findMany({
-    where: eq(collections.ownerId, userId),
-    orderBy: (c, { asc }) => [asc(c.name)],
-  });
-}
-
 export async function getCollectionById(id: string) {
   return db.query.collections.findFirst({ where: eq(collections.id, id) });
 }

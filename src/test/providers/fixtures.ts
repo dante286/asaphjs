@@ -28,7 +28,6 @@ export const IGDB_CHRONO_TRIGGER = {
   id: IGDB_CHRONO_TRIGGER_ID,
   name: "Chrono Trigger",
   summary: "A band of adventurers travels through time to prevent a global catastrophe.",
-  url: "https://www.igdb.com/games/chrono-trigger",
   first_release_date: 794_880_000,
   cover: { url: "//images.igdb.com/igdb/image/upload/t_thumb/co2i5f.jpg" },
   platforms: [

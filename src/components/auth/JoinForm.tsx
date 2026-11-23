@@ -9,7 +9,6 @@ export function JoinForm({ token, email }: { token: string; email: string }) {
 
   return (
     <Blueprint
-      className="elev-none"
       style={{ width: "100%", maxWidth: 420, padding: "clamp(20px,3vw,32px)", background: "var(--color-surface)" }}
     >
       <div style={{ fontSize: 15, fontWeight: 600 }}>You&rsquo;ve been invited to Asaph</div>

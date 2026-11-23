@@ -1,17 +1,16 @@
 import { z } from "zod";
 
-export const PROVIDER_KEYS = ["igdb", "openlibrary", "tmdb", "musicbrainz", "rebrickable"] as const;
+const PROVIDER_KEYS = ["igdb", "openlibrary", "tmdb", "musicbrainz", "rebrickable"] as const;
 export const providerKeySchema = z.enum(PROVIDER_KEYS);
 export type ProviderKey = z.infer<typeof providerKeySchema>;
 
-export const candidateSchema = z.object({
-  sourceId: z.string(),
-  title: z.string(),
-  year: z.number().optional(),
-  subtitle: z.string().optional(), // author/console/artist — disambiguates in the picker UI
-  coverUrl: z.string().url().optional(),
-});
-export type Candidate = z.infer<typeof candidateSchema>;
+export type Candidate = {
+  sourceId: string;
+  title: string;
+  year?: number;
+  subtitle?: string; // author/console/artist — disambiguates in the picker UI
+  coverUrl?: string;
+};
 
 /**
  * hydrate() returns canonical keys — never a provider's own field names — and
@@ -32,7 +31,6 @@ export type HydratedFields = {
   year?: number;
   summary?: string;
   coverUrl?: string;
-  sourceUrl?: string;
 } & Record<string, unknown>;
 
 export interface MetadataProvider {

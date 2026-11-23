@@ -125,7 +125,6 @@ describe("igdbProvider.hydrate", () => {
       year: 1995,
       summary: IGDB_CHRONO_TRIGGER.summary,
       coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co2i5f.jpg",
-      sourceUrl: "https://www.igdb.com/games/chrono-trigger",
     });
   });
 
@@ -176,7 +175,6 @@ describe("igdbProvider.hydrate", () => {
       year: undefined,
       summary: undefined,
       coverUrl: undefined,
-      sourceUrl: undefined,
     });
   });
 

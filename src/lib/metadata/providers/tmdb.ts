@@ -170,7 +170,6 @@ export const tmdbProvider: MetadataProvider = {
       year: yearOf(detail),
       summary: detail.overview?.trim() || undefined,
       coverUrl: posterUrl(detail.poster_path),
-      sourceUrl: `https://www.themoviedb.org/${mediaType}/${id}`,
     };
   },
 };

@@ -9,7 +9,6 @@ export function ResetPasswordForm({ token }: { token: string }) {
 
   return (
     <Blueprint
-      className="elev-none"
       style={{ width: "100%", maxWidth: 420, padding: "clamp(20px,3vw,32px)", background: "var(--color-surface)" }}
     >
       <div style={{ fontSize: 15, fontWeight: 600 }}>Choose a new password</div>

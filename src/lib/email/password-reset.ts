@@ -8,7 +8,7 @@ import type { EmailMessage } from "./send";
  */
 export function passwordResetEmail(params: {
   to: string;
-  /** Absolute, built from `requestOrigin()` by the caller. */
+  /** Absolute, built from `trustedLinkOrigin()` by the caller — never the request; see `link-origin.ts`. */
   url: string;
   expiresInMinutes: number;
 }): EmailMessage {

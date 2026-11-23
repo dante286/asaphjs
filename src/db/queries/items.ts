@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { items } from "@/db/schema";
 import type { FieldDef } from "@/lib/fields/field-def";
@@ -54,12 +54,11 @@ export function escapeLike(text: string): string {
   return text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-export type ListItemsParams = {
+type ListItemsParams = {
   collectionId: string;
   q?: string;
   verifiedOnly?: boolean;
   lentOnly?: boolean;
-  sort?: "title" | "updated";
   page?: number;
   pageSize?: number;
 };
@@ -76,7 +75,7 @@ export async function listItems(params: ListItemsParams) {
   const where = and(...conditions);
   // `id` breaks ties. Without it, rows with the same title can swap places between
   // two page queries, so OFFSET paging returns one twice and never returns another.
-  const orderBy = params.sort === "updated" ? [desc(items.updatedAt), desc(items.id)] : [asc(items.sortTitle), asc(items.id)];
+  const orderBy = [asc(items.sortTitle), asc(items.id)];
 
   const [rows, [{ count }]] = await Promise.all([
     db
@@ -97,7 +96,7 @@ export async function listItems(params: ListItemsParams) {
  * fixed columns and the generic `values` up front, so a new item lands complete
  * rather than as a bare title waiting to be opened and filled in.
  */
-export type NewItem = {
+type NewItem = {
   collectionId: string;
   title: string;
   values?: Record<string, unknown>;

@@ -9,7 +9,6 @@ import {
   getCollectionByShareToken,
   getCollectionForUser,
   listCollectionsForUser,
-  listOwnedCollections,
   updateCollectionFields,
   updateCollectionSettings,
 } from "./collections";
@@ -281,17 +280,6 @@ describe("listCollectionsForUser", () => {
       "Books",
       "Movies",
     ]);
-  });
-});
-
-describe("listOwnedCollections", () => {
-  it("returns only this user's, by name", async () => {
-    const other = await createTestUser();
-    await aCollection({ ownerId: owner.id, name: "Movies" });
-    await aCollection({ ownerId: owner.id, name: "Books" });
-    await aCollection({ ownerId: other.id, name: "Anime" });
-
-    expect((await listOwnedCollections(owner.id)).map((c) => c.name)).toEqual(["Books", "Movies"]);
   });
 });
 

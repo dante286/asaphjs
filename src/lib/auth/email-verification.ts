@@ -12,7 +12,7 @@ export const VERIFICATION_TOKEN_TTL_SECONDS = 60 * 60;
 export const VERIFIED_CALLBACK_PATH = "/account?verified=1";
 
 /** One verification email per account per this many seconds, however it was asked for. */
-export const VERIFICATION_COOLDOWN_SECONDS = 60;
+const VERIFICATION_COOLDOWN_SECONDS = 60;
 
 /**
  * Verification needs what password reset needs: somewhere to send mail, and a

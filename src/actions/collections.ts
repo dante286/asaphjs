@@ -38,12 +38,6 @@ const createCollectionSchema = z.object({
 const collectionSettingsPatchSchema = z
   .object({
     name: z.string().trim().min(1, "Give the collection a name.").max(120),
-    defaultView: z.enum(["covers", "table"]),
-    features: z.object({
-      lending: z.boolean().optional(),
-      verified: z.boolean().optional(),
-      lookup: providerKeySchema.optional(),
-    }),
   })
   .partial();
 // Deliberately not here: `shareEnabled` and `shareToken`, which only
